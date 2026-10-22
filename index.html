@@ -127,7 +127,7 @@
 </head>
 <body>
 <header>
-  <h1>내 비서<small>v5</small></h1>
+  <h1>내 비서<small>v7</small></h1>
   <button id="gear" class="icon" aria-label="설정">⚙️</button>
 </header>
 
@@ -137,7 +137,7 @@
     <p class="sub">일정·할 일·맛집을 정리하고, 물어보면 찾아 드려요.</p>
     <button class="example">28일 오후 2시 원두 발주창 열림</button>
     <button class="example">이번주 케이크 예약 뭐 있어?</button>
-    <button class="example">다음주 김민지님 케이크 예약 4시로 바꿔줘</button>
+    <button class="example">OO파스타 별점 3개로 바꿔줘</button>
   </div>
 </main>
 
@@ -186,6 +186,8 @@ const store = {
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
 };
 
+const NEED_SERVER = 's7'; // Code.gs의 SERVER_VERSION과 같아야 함
+let warnedVersion = false;
 let busy = false;
 let turns = [];        // AI에게 보낼 최근 대화 (앱을 닫으면 사라짐)
 let sharedPending = false;
@@ -247,6 +249,10 @@ async function call(body) {
     data = await res.json();
   } catch {
     throw Object.assign(new Error('서버 답이 이상해요. ⚙️ 설정의 웹 앱 주소를 확인해 주세요.'), { unsure: true });
+  }
+  if (data.v !== NEED_SERVER && !warnedVersion) {
+    warnedVersion = true;
+    bubble('note', `⚠️ 서버가 예전 버전이에요 (필요: ${NEED_SERVER}, 지금: ${data.v || '없음'}). Apps Script에서 [배포 → 배포 관리 → 새 버전]을 했는지 확인해 주세요.`);
   }
   if (data.error) throw new Error(data.error);
   return data;

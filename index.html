@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>내 비서</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<meta name="theme-color" content="#6b4f3a">
+<style>
+  :root { --bg:#faf7f2; --card:#fff; --text:#2b2b2b; --muted:#777; --accent:#6b4f3a; --line:#e5ded3; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1d1a17; --card:#2a2622; --text:#eee; --muted:#aaa; --accent:#c9a27e; --line:#3d3731; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0 auto; padding: 16px; max-width: 560px; background: var(--bg); color: var(--text);
+         font-family: system-ui, sans-serif; font-size: 16px; }
+  h1 { font-size: 20px; display: flex; justify-content: space-between; align-items: center; }
+  textarea, input, select { width: 100%; font: inherit; padding: 10px; border: 1px solid var(--line);
+         border-radius: 10px; background: var(--card); color: var(--text); }
+  textarea { min-height: 110px; }
+  button { font: inherit; padding: 12px 16px; border: 0; border-radius: 10px; background: var(--accent); color: #fff; }
+  button.sub { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  button:disabled { opacity: .5; }
+  .row { display: flex; gap: 8px; margin-top: 10px; }
+  .row > * { flex: 1; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-top: 12px; }
+  .card label { display: block; font-size: 13px; color: var(--muted); margin-top: 8px; }
+  #msg { margin-top: 12px; white-space: pre-line; }
+  #msg a { display: block; margin-top: 8px; color: var(--accent); }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<h1>☕ 내 비서 <button class="sub" id="gear" aria-label="설정">⚙️</button></h1>
+
+<section id="setup" class="card hidden">
+  <label>웹 앱 URL<input id="url" placeholder="https://script.google.com/macros/s/.../exec"></label>
+  <label>비밀번호<input id="secret" type="password"></label>
+  <div class="row"><button id="saveSetup">설정 저장</button></div>
+</section>
+
+<textarea id="text" placeholder="예) 28일 오후 2시 원두 발주창 열림"></textarea>
+<div class="row"><button id="analyze">정리하기</button></div>
+
+<div id="items"></div>
+<div class="row hidden" id="actions">
+  <button class="sub" id="cancel">취소</button>
+  <button id="save">저장</button>
+</div>
+<div id="msg" role="status"></div>
+
+<script>
+const KINDS = {
+  카페_발주할일: '📦 발주할 일', 카페_발주창: '⏰ 발주창', 카페_케이크예약: '🎂 케이크 예약',
+  카페_기타: '☕ 카페 기타', 개인약속: '🙂 개인 약속', 할일: '✅ 할 일', 맛집: '🍽️ 맛집',
+};
+const $ = id => document.getElementById(id);
+// 설정은 이 폰에만 저장 (GitHub에 공개되는 코드에 주소/비밀번호를 넣지 않기 위해)
+const store = {
+  get: k => { try { return localStorage.getItem(k) || ''; } catch { return ''; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
+};
+let items = [];
+
+function say(...parts) { $('msg').replaceChildren(...parts); }
+
+function mapLink(it) {
+  return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent((it.place + ' ' + it.title).trim());
+}
+
+// 헤더 없이 보내야 브라우저가 사전 확인(CORS preflight)을 하지 않아 Apps Script와 통신됨
+async function call(body) {
+  const res = await fetch(store.get('url'), {
+    method: 'POST',
+    body: JSON.stringify({ ...body, secret: store.get('secret') }),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
+function render() {
+  $('items').replaceChildren();
+  items.forEach((it, i) => {
+    const c = document.createElement('div');
+    c.className = 'card';
+    c.innerHTML = `
+      <label>종류<select data-k="kind">${Object.entries(KINDS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>
+      <label>제목<input data-k="title"></label>
+      <div class="row"><label>날짜<input type="date" data-k="date"></label><label>시간<input type="time" data-k="time"></label></div>
+      <label>장소<input data-k="place"></label>
+      <label>메모<input data-k="memo"></label>
+      <div class="row"><button class="sub" data-del>이 항목 빼기</button></div>`;
+    c.querySelectorAll('[data-k]').forEach(el => {
+      el.value = it[el.dataset.k];
+      el.oninput = () => { it[el.dataset.k] = el.value; };
+    });
+    c.querySelector('[data-del]').onclick = () => { items.splice(i, 1); render(); };
+    $('items').append(c);
+  });
+  $('actions').classList.toggle('hidden', !items.length);
+}
+
+$('analyze').onclick = async () => {
+  const text = $('text').value.trim();
+  if (!text) return;
+  if (!store.get('url')) { $('setup').classList.remove('hidden'); return say('먼저 ⚙️ 설정을 해 주세요'); }
+  say('🤖 정리하는 중...');
+  $('analyze').disabled = true;
+  try {
+    items = (await call({ action: 'analyze', text })).items;
+    render();
+    say(items.length ? '맞는지 확인하고 [저장]을 눌러 주세요' : '저장할 내용을 찾지 못했어요');
+  } catch (e) {
+    say('⚠️ ' + e.message);
+  }
+  $('analyze').disabled = false;
+};
+
+$('save').onclick = async () => {
+  say('💾 저장하는 중...');
+  $('save').disabled = true;
+  try {
+    await call({ action: 'save', items });
+    const links = items.filter(it => it.kind === '맛집').map(it => {
+      const a = document.createElement('a');
+      a.href = mapLink(it);
+      a.target = '_blank';
+      a.textContent = `📍 ${it.title} — 구글맵에서 ⭐저장하기`;
+      return a;
+    });
+    say('✅ 저장 완료!\n' + items.map(it => KINDS[it.kind] + ' ' + it.title).join('\n'), ...links);
+    items = [];
+    render();
+    $('text').value = '';
+  } catch (e) {
+    say('⚠️ ' + e.message);
+  }
+  $('save').disabled = false;
+};
+
+$('cancel').onclick = () => { items = []; render(); say(''); };
+
+$('url').value = store.get('url');
+$('secret').value = store.get('secret');
+$('gear').onclick = () => $('setup').classList.toggle('hidden');
+$('saveSetup').onclick = () => {
+  store.set('url', $('url').value.trim());
+  store.set('secret', $('secret').value.trim());
+  $('setup').classList.add('hidden');
+  say('설정이 저장됐어요');
+};
+if (!store.get('url')) $('setup').classList.remove('hidden');
+
+// 카톡·네이버지도 등에서 '공유'로 들어온 글을 입력창에 채움
+const p = new URLSearchParams(location.search);
+const shared = ['title', 'text', 'url'].map(k => p.get(k)).filter(Boolean).join('\n');
+if (shared) {
+  $('text').value = shared;
+  history.replaceState(null, '', location.pathname);
+}
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>

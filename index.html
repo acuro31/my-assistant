@@ -14,11 +14,14 @@
   :root {
     --bg: #F2F4F6; --card: #FFFFFF; --text: #191F28; --sub: #6B7684; --label: #8B95A1; --line: #E5E8EB;
     --primary: #2272EB; --accent-text: #2272EB; --secondary: #F2F4F6; --danger: #E42939; --note: #5B6573;
+    --danger-text: #E42939;
+    color-scheme: light dark; /* 날짜·시간 선택창, 스크롤바도 다크 모드를 따라감 */
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #17171C; --card: #2C2C35; --text: #ECECEC; --sub: #9E9EA7; --label: #9E9EA7; --line: #3A3A44;
       --primary: #2272EB; --accent-text: #6AA8FF; --secondary: #3A3A44; --danger: #E42939; --note: #9E9EA7;
+      --danger-text: #FF6B6B;
     }
   }
   * { box-sizing: border-box; }
@@ -105,9 +108,10 @@
   #chips { display: flex; gap: 8px; overflow-x: auto; padding: 2px 4px 8px; scrollbar-width: none; }
   #chips::-webkit-scrollbar { display: none; }
   .chip { flex: none; min-height: 40px; padding: 0 14px; border: 0; border-radius: 20px; background: var(--card); font-size: 14px; font-weight: 600; }
-  .chip:disabled { opacity: .5; }
+  .chip:disabled { opacity: .4; }
   #sharedTag { font-size: 13px; color: var(--accent-text); padding: 0 8px 6px; }
   .inputbar { display: flex; align-items: flex-end; gap: 8px; background: var(--card); border-radius: 24px; padding: 6px 6px 6px 16px; }
+  .inputbar:focus-within { box-shadow: 0 0 0 2px var(--accent-text); }
   #text {
     flex: 1; border: 0; background: transparent; resize: none; outline: none;
     line-height: 22px; padding: 11px 0; max-height: 154px; /* 6줄까지 늘어남 */
@@ -124,19 +128,21 @@
     padding: 24px 20px calc(20px + env(safe-area-inset-bottom));
   }
   .sheet-body h2 { font-size: 22px; margin: 0 0 6px; }
-  .err { color: var(--danger); font-size: 14px; margin: 10px 0 0; }
+  .err { color: var(--danger-text); font-size: 14px; margin: 10px 0 0; }
+  .mascot { display: block; border-radius: 18px; margin-bottom: 12px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>가나디 비서<small>v11</small></h1>
+  <h1>가나디 비서<small>v12</small></h1>
   <button id="gear" class="icon" aria-label="설정">⚙️</button>
 </header>
 
 <main id="chat" role="log" aria-live="polite">
   <div id="welcome">
-    <h2>무엇이든 말해 주세요</h2>
-    <p class="sub">일정·할 일·맛집을 정리하고, 물어보면 찾아 드려요.</p>
+    <img src="icon-192.png?v=11" alt="" width="64" height="64" class="mascot">
+    <h2>안녕하세요, 가나디예요</h2>
+    <p class="sub">일정·할 일·맛집, 말만 하면 정리해 둘게요.</p>
     <button class="example">28일 오후 2시 원두 발주창 열림</button>
     <button class="example">이번주 일정 뭐 있어?</button>
     <button class="example">OO파스타 별점 3개로 바꿔줘</button>
@@ -153,7 +159,7 @@
   </div>
   <div id="sharedTag" hidden>다른 앱에서 가져온 글이에요. 다듬어서 보내 주세요.</div>
   <div class="inputbar">
-    <textarea id="text" rows="1" placeholder="말하거나 적어 주세요 (키보드 🎤)" aria-label="메시지"></textarea>
+    <textarea id="text" rows="1" placeholder="적거나 말해 주세요 (키보드 🎤)" aria-label="메시지"></textarea>
     <button id="send" aria-label="보내기">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
     </button>
@@ -163,7 +169,7 @@
 <div id="setup" class="sheet" hidden>
   <div class="sheet-body" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
     <h2 id="setupTitle">설정</h2>
-    <p id="setupDesc" class="sub">Apps Script 웹 앱 주소와 비밀번호를 넣어 주세요. 이 폰에만 저장돼요.</p>
+    <p id="setupDesc" class="sub">연결할 웹 앱 주소와 비밀번호를 넣어 주세요. 이 폰에만 저장돼요.</p>
     <div class="field"><label for="url">웹 앱 주소</label><input id="url" inputmode="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec"></div>
     <div class="field"><label for="secret">비밀번호</label><input id="secret" type="password" autocomplete="off"></div>
     <p id="setupErr" class="err" hidden></p>
@@ -179,7 +185,7 @@ const KINDS = {
   카페_발주할일: '📦 발주할 일', 카페_발주창: '⏰ 발주창', 카페_케이크예약: '🎂 케이크 예약',
   카페_기타: '☕ 카페 기타', 개인약속: '🙂 개인 약속', 할일: '✅ 할 일', 맛집: '🍽️ 맛집', 맛집_후기: '⭐ 맛집 후기',
 };
-const LABELS = { kind: '종류', title: '제목', date: '날짜', time: '시간', repeat: '반복', place: '장소', memo: '메모', rating: '별점' };
+const LABELS = { kind: '종류', title: '제목', date: '날짜', time: '시간', end: '끝 시간', repeat: '반복', place: '장소', memo: '메모', rating: '별점' };
 const W = ['일', '월', '화', '수', '목', '금', '토'];
 const $ = id => document.getElementById(id);
 const chat = $('chat'), input = $('text');
@@ -189,7 +195,7 @@ const store = {
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
 };
 
-const NEED_SERVER = 's10'; // Code.gs의 SERVER_VERSION과 같아야 함
+const NEED_SERVER = 's11'; // Code.gs의 SERVER_VERSION과 같아야 함
 let warnedVersion = false;
 let busy = false;
 let turns = [];        // AI에게 보낼 최근 대화 (앱을 닫으면 사라짐)
@@ -235,11 +241,17 @@ function whenText(it) {
   if (it.kind === '맛집_후기') return stars(+it.rating) + (it.date ? ` · ${day(it.date)} 다녀옴` : '');
   if (it.kind === '할일') return it.date ? '마감 ' + day(it.date) : '날짜 없음';
   if (!it.date) return '날짜 없음 → 할 일로 저장돼요';
-  const time = it.time || (it.kind === '카페_발주할일' ? '10:00' : '하루종일');
-  return `${day(it.date)} ${time} · ${it.kind.startsWith('카페') ? '카페 업무' : '개인 캘린더'}` +
-    (it.repeat ? ` · ${it.repeat} 반복` : '');
+  let time = it.time || (it.kind === '카페_발주할일' ? '10:00' : '');
+  // 서버와 같은 규칙: 오늘 발주인데 10시가 지났으면 하루 종일 일정으로 저장됨
+  if (!it.time && time && it.date === todayStr() && time <= nowHM()) time = '';
+  return `${day(it.date)} ${time ? time + (it.end ? '~' + it.end : '') : '하루 종일'} · ` +
+    `${it.kind.startsWith('카페') ? '카페 업무' : '개인 캘린더'}` + (it.repeat ? ` · ${it.repeat} 반복` : '');
 }
+const pad2 = n => String(n).padStart(2, '0');
+const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
+const nowHM = () => { const d = new Date(); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
 const summary = it => `${KINDS[it.kind] || it.kind} ${it.title || '(제목 없음)'} · ${whenText(it)}`;
+// Code.gs의 mapLink와 같은 식 — 바꾸면 둘 다 바꾸기
 const mapLink = it => 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent((it.place + ' ' + it.title).trim());
 
 // ───── 서버 통신 ─────
@@ -249,16 +261,16 @@ async function call(body) {
   try {
     res = await fetch(store.get('url'), { method: 'POST', body: JSON.stringify({ ...body, secret: store.get('secret') }) });
   } catch {
-    throw Object.assign(new Error('서버에 연결하지 못했어요. 인터넷 연결을 확인하거나, ⚙️ 설정의 웹 앱 주소와 배포 권한(모든 사용자)을 확인해 주세요.'), { unsure: true });
+    throw Object.assign(new Error('연결이 안 돼요. 인터넷을 확인하고 다시 보내 주세요.\n계속 안 되면 ⚙️ 설정에서 주소를 확인해 주세요.'), { unsure: true });
   }
   try {
     data = await res.json();
   } catch {
-    throw Object.assign(new Error('서버 답이 이상해요. ⚙️ 설정의 웹 앱 주소를 확인해 주세요.'), { unsure: true });
+    throw Object.assign(new Error('서버 답이 이상해요. ⚙️ 설정에서 주소를 확인해 주세요.'), { unsure: true });
   }
   if (data.v !== NEED_SERVER && !warnedVersion) {
     warnedVersion = true;
-    bubble('note', `⚠️ 서버가 예전 버전이에요 (필요: ${NEED_SERVER}, 지금: ${data.v || '없음'}). Apps Script에서 [배포 → 배포 관리 → 새 버전]을 했는지 확인해 주세요.`);
+    bubble('note', `⚠️ 서버 업데이트가 필요해요. Apps Script에서 [배포 → 배포 관리 → 새 버전]으로 배포해 주세요. (필요 ${NEED_SERVER} · 지금 ${data.v || '없음'})`);
   }
   if (data.error) {
     if (data.error.includes('비밀번호')) showSetup(false);
@@ -319,17 +331,17 @@ async function send(text, fromInput) {
   }
 
   const typing = add(el('div', 'msg bot typing'));
-  typing.append(el('span', 'sr-only', '정리하는 중'), el('span'), el('span'), el('span'));
-  const slow = setTimeout(() => { typing.textContent = '평소보다 오래 걸려요…'; }, 15000);
+  typing.append(el('span', 'sr-only', '가나디가 생각하는 중'), el('span'), el('span'), el('span'));
+  const slow = setTimeout(() => { typing.textContent = '가나디가 열심히 찾고 있어요…'; }, 15000);
   setBusy(true);
   try {
     const r = await call({ action: 'analyze', text, shared, history: prev });
     typing.remove();
-    if (r.answer) say(r.answer);
+    if (r.answer) say(ko(r.answer));
     else if (r.candidates) deleteCard(r.candidates);
     else if (r.edits) editCard(r.edits);
     else if (r.items && r.items.length) saveCard(r.items);
-    else say('무엇을 하면 될지 잘 모르겠어요. 조금만 더 자세히 말해 주세요.');
+    else say('가나디가 잘 못 알아들었어요. 조금만 더 자세히 말해 주세요.');
   } catch (e) {
     typing.remove();
     turns.pop();
@@ -349,7 +361,7 @@ function fieldsFor(kind) {
   if (kind === '할일') return ['kind', 'title', 'date', 'memo'];
   if (kind === '맛집') return ['kind', 'title', 'place', 'memo'];
   if (kind === '맛집_후기') return ['kind', 'title', 'rating', 'date', 'memo'];
-  return ['kind', 'title', 'date', 'time', 'repeat', 'place', 'memo'];
+  return ['kind', 'title', 'date', 'time', 'end', 'repeat', 'place', 'memo'];
 }
 function labelFor(k, kind) {
   if (k === 'date' && kind === '할일') return '마감일';
@@ -362,7 +374,7 @@ function control(k, it, changed) {
   if (k === 'kind') options(Object.entries(KINDS));
   else if (k === 'repeat') options([['', '없음'], ['매일', '매일'], ['매주', '매주'], ['매월', '매월']]);
   else if (k === 'rating') options([['', '없음'], ...[1, 2, 3, 4, 5].map(n => [String(n), '★'.repeat(n)])]);
-  else { c = el('input'); c.type = k === 'date' ? 'date' : k === 'time' ? 'time' : 'text'; }
+  else { c = el('input'); c.type = k === 'date' ? 'date' : k === 'time' || k === 'end' ? 'time' : 'text'; }
   c.value = it[k] || '';
   c[c.tagName === 'SELECT' ? 'onchange' : 'oninput'] = () => { it[k] = c.value; changed(k); };
   return c;
@@ -416,7 +428,7 @@ function saveCard(items) {
       try {
         res = await call({ action: 'save', items });
       } catch (e) {
-        if (e.unsure) e.message += '\n저장됐는지 캘린더에서 먼저 확인한 뒤 다시 눌러 주세요.';
+        if (e.unsure) e.message += '\n저장됐을 수도 있어요. 캘린더나 시트를 확인하고 다시 눌러 주세요.';
         throw e;
       }
       go.textContent = '저장했어요';
@@ -424,7 +436,7 @@ function saveCard(items) {
       // 일부만 저장됐으면 저장된 것만 보여주고 되돌리기도 그것만
       savedMessage(items.filter((_, i) => res.ids[i]), res.ids.filter(Boolean));
       if (res.errors && res.errors.length) {
-        bubble('note', '⚠️ 저장하지 못한 것:\n' + res.errors.join('\n') + '\n다시 말해 주세요.');
+        bubble('note', '⚠️ 이건 저장하지 못했어요.\n' + res.errors.join('\n') + '\n다시 말해 주세요.');
       }
     });
   };
@@ -438,7 +450,7 @@ function savedMessage(items, ids) {
   const b = bubble('bot live', '');
   b.append(el('div', '', '저장했어요 ✅'), ...items.map(it => el('div', 'saved-line', '· ' + summary(it))));
   items.filter(it => it.kind === '맛집').forEach(it => {
-    const a = el('a', 'maplink', `📍 ${it.title} — 지도에서 ⭐저장하기`);
+    const a = el('a', 'maplink', `📍 지도에서 ${it.title} 저장하기`);
     a.href = mapLink(it);
     a.target = '_blank';
     a.rel = 'noopener';
@@ -483,11 +495,12 @@ function pickCard(cands, o) {
     return r;
   });
   go.onclick = () => act(go, o.busyText, async () => {
-    const { count } = await call({ action: o.action, targets: cands.filter(c => c.on) });
-    go.textContent = '완료';
+    const picked = cands.filter(c => c.on);
+    const { count } = await call({ action: o.action, targets: picked });
+    go.textContent = o.doneText;
     lockOld();
-    if (count) o.done(count);
-    else say('일정을 찾지 못했어요. 이미 바뀌었거나 지워졌을 수 있어요.');
+    if (count) o.done(count, picked);
+    else say('이미 바뀌었거나 지워진 것 같아요. 다시 말해 주세요.');
   });
   cancel.onclick = () => { if (!busy) { lockOld(); say('취소했어요.'); } };
   update();
@@ -499,22 +512,23 @@ function deleteCard(cands) {
   const places = cands.filter(c => c.type === 'place').length;
   pickCard(cands, {
     title: !places ? '이 일정을 지울까요?' : places === cands.length ? '이 맛집을 지울까요?' : '이걸 지울까요?',
-    btnClass: 'danger', action: 'delete', busyText: '지우는 중…',
-    label: n => `${n}개 삭제하기`,
+    btnClass: 'danger', action: 'delete', busyText: '지우는 중…', doneText: '지웠어요',
+    label: n => `${n}개 지우기`,
     row: c => el('span', '', ko(c.label)),
-    done: n => {
+    done: (n, picked) => {
       say(`${n}개 지웠어요.`);
-      if (places < cands.length) bubble('note', '일정을 실수로 지웠다면 구글캘린더 ⚙️ 설정 → 휴지통에서 30일 안에 복구할 수 있어요.');
-      if (places) bubble('note', '지운 맛집 내용은 구글 시트의 [기록] 탭에 남아 있어요.');
+      // 실제로 고른 것 기준으로 안내
+      if (picked.some(c => c.type !== 'place')) bubble('note', '잘못 지웠다면 구글 캘린더 휴지통에서 30일 안에 되살릴 수 있어요.');
+      if (picked.some(c => c.type === 'place')) bubble('note', '지운 맛집 내용은 구글 시트의 [기록] 탭에 남아 있어요.');
     },
   });
   remember('[삭제 후보] ' + cands.map((c, i) => `${i + 1}. ${ko(c.label)}`).join(' / '));
 }
 
 function editCard(cands) {
-  if (!cands.length) return say('고칠 일정을 찾지 못했어요. 날짜나 이름을 조금 더 알려 주세요.');
+  if (!cands.length) return say('고칠 것을 찾지 못했어요. 날짜나 이름을 조금 더 알려 주세요.');
   pickCard(cands, {
-    title: '이렇게 바꿀까요?', btnClass: 'primary', action: 'update', busyText: '바꾸는 중…',
+    title: '이렇게 바꿀까요?', btnClass: 'primary', action: 'update', busyText: '바꾸는 중…', doneText: '바꿨어요',
     label: n => `${n}개 바꾸기`,
     row: c => row('', [el('span', 'before', ko(c.before)), el('span', 'after', '→ ' + ko(c.after))]),
     done: n => say(`${n}개 바꿨어요.`),
@@ -548,9 +562,12 @@ function showSetup(first) {
   $('secret').value = store.get('secret');
   $('setupErr').hidden = true;
   $('setup').hidden = false;
+  setBehind(true);
   $('url').focus();
 }
-function closeSetup() { $('setup').hidden = true; $('gear').focus(); }
+// 설정 창이 열려 있는 동안 뒤 화면으로 탭(Tab) 이동·스크린리더 읽기가 가지 않게
+function setBehind(off) { ['chat', 'gear'].forEach(id => { $(id).inert = off; }); document.querySelector('footer').inert = off; }
+function closeSetup() { $('setup').hidden = true; setBehind(false); $('gear').focus(); }
 $('gear').onclick = () => showSetup(false);
 $('setupClose').onclick = closeSetup;
 document.addEventListener('keydown', e => {
@@ -558,7 +575,7 @@ document.addEventListener('keydown', e => {
 });
 $('setupSave').onclick = () => {
   const url = $('url').value.trim(), secret = $('secret').value.trim();
-  const err = !/^https:\/\/script\.google\.com\/.+\/exec$/.test(url) ? '웹 앱 주소는 https://script.google.com/ 으로 시작하고 /exec 로 끝나야 해요.'
+  const err = !/^https:\/\/script\.google\.com\/.+\/exec$/.test(url) ? '주소가 맞지 않아요. /exec 로 끝나는 주소를 넣어 주세요.'
     : !secret ? '비밀번호를 넣어 주세요.' : '';
   $('setupErr').textContent = err;
   $('setupErr').hidden = !err;
@@ -566,6 +583,7 @@ $('setupSave').onclick = () => {
   store.set('url', url);
   store.set('secret', secret);
   $('setup').hidden = true;
+  setBehind(false);
   input.focus();
 };
 if (!store.get('url')) showSetup(true);

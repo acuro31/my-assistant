@@ -1,2 +1,2 @@
-// 폰에 앱으로 설치되려면 서비스 워커가 있어야 해서 둔 빈 파일. 오프라인 기능은 없음
-self.addEventListener('fetch', () => {});
+// 오프라인 기능은 없음. 빈 fetch 처리기는 화면을 열 때마다 서비스 워커를 깨우기만 해서 두지 않음
+self.addEventListener('install', () => self.skipWaiting());

@@ -28,6 +28,7 @@
   .card label { display: block; font-size: 13px; color: var(--muted); margin-top: 8px; }
   #msg { margin-top: 12px; white-space: pre-line; }
   #msg a { display: block; margin-top: 8px; color: var(--accent); }
+  #msg button { display: block; width: 100%; margin-top: 12px; }
   .hidden { display: none; }
 </style>
 </head>
@@ -40,8 +41,8 @@
   <div class="row"><button id="saveSetup">설정 저장</button></div>
 </section>
 
-<textarea id="text" placeholder="예) 28일 오후 2시 원두 발주창 열림"></textarea>
-<div class="row"><button id="analyze">정리하기</button></div>
+<textarea id="text" placeholder="예) 28일 오후 2시 원두 발주창 열림&#10;예) 이번주 케이크 예약 뭐 있어?"></textarea>
+<div class="row"><button id="analyze">보내기</button></div>
 
 <div id="items"></div>
 <div class="row hidden" id="actions">
@@ -109,9 +110,11 @@ $('analyze').onclick = async () => {
   say('🤖 정리하는 중...');
   $('analyze').disabled = true;
   try {
-    items = (await call({ action: 'analyze', text })).items;
+    const r = await call({ action: 'analyze', text });
+    items = r.items || [];
     render();
-    say(items.length ? '맞는지 확인하고 [저장]을 눌러 주세요' : '저장할 내용을 찾지 못했어요');
+    if (r.answer) say('💬 ' + r.answer);
+    else say(items.length ? '맞는지 확인하고 [저장]을 눌러 주세요' : '저장할 내용을 찾지 못했어요');
   } catch (e) {
     say('⚠️ ' + e.message);
   }
@@ -122,7 +125,15 @@ $('save').onclick = async () => {
   say('💾 저장하는 중...');
   $('save').disabled = true;
   try {
-    await call({ action: 'save', items });
+    const { ids } = await call({ action: 'save', items });
+    const undoBtn = document.createElement('button');
+    undoBtn.className = 'sub';
+    undoBtn.textContent = '↩️ 방금 저장한 것 되돌리기';
+    undoBtn.onclick = async () => {
+      undoBtn.disabled = true;
+      try { await call({ action: 'undo', ids }); say('↩️ 되돌렸어요'); }
+      catch (e) { say('⚠️ ' + e.message); }
+    };
     const links = items.filter(it => it.kind === '맛집').map(it => {
       const a = document.createElement('a');
       a.href = mapLink(it);
@@ -130,7 +141,7 @@ $('save').onclick = async () => {
       a.textContent = `📍 ${it.title} — 구글맵에서 ⭐저장하기`;
       return a;
     });
-    say('✅ 저장 완료!\n' + items.map(it => KINDS[it.kind] + ' ' + it.title).join('\n'), ...links);
+    say('✅ 저장 완료!\n' + items.map(it => KINDS[it.kind] + ' ' + it.title).join('\n'), ...links, undoBtn);
     items = [];
     render();
     $('text').value = '';

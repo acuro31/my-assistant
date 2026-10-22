@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <!-- interactive-widget: 키보드가 올라오면 화면 높이가 줄어 입력창이 가려지지 않음 -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-<title>내 비서</title>
+<title>가나디 비서</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
 <meta name="theme-color" content="#F2F4F6" media="(prefers-color-scheme: light)">
@@ -12,12 +12,12 @@
 <style>
   :root {
     --bg: #F2F4F6; --card: #FFFFFF; --text: #191F28; --sub: #6B7684; --label: #8B95A1; --line: #E5E8EB;
-    --primary: #2272EB; --accent-text: #2272EB; --secondary: #F2F4F6; --danger: #E42939;
+    --primary: #2272EB; --accent-text: #2272EB; --secondary: #F2F4F6; --danger: #E42939; --note: #5B6573;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #17171C; --card: #2C2C35; --text: #ECECEC; --sub: #9E9EA7; --label: #9E9EA7; --line: #3A3A44;
-      --primary: #2272EB; --accent-text: #6AA8FF; --secondary: #3A3A44; --danger: #E42939;
+      --primary: #2272EB; --accent-text: #6AA8FF; --secondary: #3A3A44; --danger: #E42939; --note: #9E9EA7;
     }
   }
   * { box-sizing: border-box; }
@@ -39,7 +39,8 @@
     padding: calc(8px + env(safe-area-inset-top)) 8px 8px 20px;
   }
   h1 { font-size: 20px; font-weight: 700; margin: 0; }
-  h1 small { font-size: 12px; font-weight: 400; color: var(--label); margin-left: 4px; }
+  h1 small { font-size: 12px; font-weight: 400; color: var(--sub); margin-left: 4px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .icon { width: 44px; height: 44px; border: 0; border-radius: 12px; background: none; font-size: 20px; }
 
   #chat { flex: 1; overflow-y: auto; padding: 8px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
@@ -49,7 +50,7 @@
   }
   .me { align-self: flex-end; background: var(--primary); color: #fff; border-bottom-right-radius: 6px; }
   .bot { align-self: flex-start; background: var(--card); border-bottom-left-radius: 6px; }
-  .note { align-self: flex-start; font-size: 14px; color: var(--sub); padding: 0 6px; }
+  .note { align-self: flex-start; font-size: 14px; color: var(--note); padding: 0 6px; white-space: pre-wrap; }
   .saved-line { color: var(--sub); font-size: 15px; }
   .maplink { display: block; margin-top: 8px; color: var(--accent-text); font-weight: 600; }
 
@@ -65,7 +66,7 @@
   .hint { font-size: 14px; color: var(--sub); margin-bottom: 4px; }
   .item { padding: 14px 0; border-top: 1px solid var(--line); }
   .item:first-child { border-top: 0; }
-  .kind { font-size: 13px; color: var(--label); }
+  .kind { font-size: 13px; color: var(--sub); }
   .title { font-size: 17px; font-weight: 700; margin-top: 2px; }
   .when { font-size: 15px; color: var(--sub); margin-top: 4px; }
   .row-btns { display: flex; gap: 4px; margin: 4px 0 0 -12px; }
@@ -127,7 +128,7 @@
 </head>
 <body>
 <header>
-  <h1>내 비서<small>v7</small></h1>
+  <h1>가나디 비서<small>v11</small></h1>
   <button id="gear" class="icon" aria-label="설정">⚙️</button>
 </header>
 
@@ -136,7 +137,7 @@
     <h2>무엇이든 말해 주세요</h2>
     <p class="sub">일정·할 일·맛집을 정리하고, 물어보면 찾아 드려요.</p>
     <button class="example">28일 오후 2시 원두 발주창 열림</button>
-    <button class="example">이번주 케이크 예약 뭐 있어?</button>
+    <button class="example">이번주 일정 뭐 있어?</button>
     <button class="example">OO파스타 별점 3개로 바꿔줘</button>
   </div>
 </main>
@@ -145,8 +146,9 @@
   <div id="chips">
     <button class="chip">오늘 일정</button>
     <button class="chip">내일 일정</button>
-    <button class="chip">이번주 케이크 예약</button>
+    <button class="chip">이번주 일정</button>
     <button class="chip">할 일 목록</button>
+    <button class="chip">저장한 맛집</button>
   </div>
   <div id="sharedTag" hidden>다른 앱에서 가져온 글이에요. 다듬어서 보내 주세요.</div>
   <div class="inputbar">
@@ -186,7 +188,7 @@ const store = {
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
 };
 
-const NEED_SERVER = 's7'; // Code.gs의 SERVER_VERSION과 같아야 함
+const NEED_SERVER = 's10'; // Code.gs의 SERVER_VERSION과 같아야 함
 let warnedVersion = false;
 let busy = false;
 let turns = [];        // AI에게 보낼 최근 대화 (앱을 닫으면 사라짐)
@@ -222,7 +224,10 @@ function day(s) {
   const w = W[new Date(Date.UTC(+m[1], m[2] - 1, +m[3])).getUTCDay()];
   return `${+m[1] !== new Date().getFullYear() ? m[1] + '/' : ''}${m[2]}/${m[3]}(${w})`;
 }
-const stars = r => r ? '★'.repeat(r) + '☆'.repeat(5 - r) : '별점 없음';
+const stars = r => {
+  r = Math.max(0, Math.min(5, Math.round(r) || 0));
+  return r ? '★'.repeat(r) + '☆'.repeat(5 - r) : '별점 없음';
+};
 
 function whenText(it) {
   if (it.kind === '맛집') return it.place || '장소 없음';
@@ -233,7 +238,7 @@ function whenText(it) {
   return `${day(it.date)} ${time} · ${it.kind.startsWith('카페') ? '카페 업무' : '개인 캘린더'}` +
     (it.repeat ? ` · ${it.repeat} 반복` : '');
 }
-const summary = it => `${KINDS[it.kind] || it.kind} ${it.title} · ${whenText(it)}`;
+const summary = it => `${KINDS[it.kind] || it.kind} ${it.title || '(제목 없음)'} · ${whenText(it)}`;
 const mapLink = it => 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent((it.place + ' ' + it.title).trim());
 
 // ───── 서버 통신 ─────
@@ -243,7 +248,7 @@ async function call(body) {
   try {
     res = await fetch(store.get('url'), { method: 'POST', body: JSON.stringify({ ...body, secret: store.get('secret') }) });
   } catch {
-    throw Object.assign(new Error('인터넷이 불안정해요. 연결을 확인하고 다시 시도해 주세요.'), { unsure: true });
+    throw Object.assign(new Error('서버에 연결하지 못했어요. 인터넷 연결을 확인하거나, ⚙️ 설정의 웹 앱 주소와 배포 권한(모든 사용자)을 확인해 주세요.'), { unsure: true });
   }
   try {
     data = await res.json();
@@ -254,7 +259,10 @@ async function call(body) {
     warnedVersion = true;
     bubble('note', `⚠️ 서버가 예전 버전이에요 (필요: ${NEED_SERVER}, 지금: ${data.v || '없음'}). Apps Script에서 [배포 → 배포 관리 → 새 버전]을 했는지 확인해 주세요.`);
   }
-  if (data.error) throw new Error(data.error);
+  if (data.error) {
+    if (data.error.includes('비밀번호')) showSetup(false);
+    throw new Error(data.error);
+  }
   return data;
 }
 
@@ -272,8 +280,12 @@ function lockOld() {
   });
 }
 
+// 카드 버튼을 누르면 서버 답이 올 때까지 그 카드의 모든 버튼·칸을 잠금 (저장 중 [빼기] 같은 엇갈림 방지)
 async function act(btn, busyText, fn) {
   if (busy) return;
+  const card = btn.closest('.live');
+  const ctrls = card ? [...card.querySelectorAll('button, input, select')].filter(x => !x.disabled) : [];
+  ctrls.forEach(x => { x.disabled = true; });
   const old = btn.textContent;
   btn.textContent = busyText;
   setBusy(true);
@@ -281,28 +293,32 @@ async function act(btn, busyText, fn) {
     await fn();
   } catch (e) {
     btn.textContent = old;
+    if (card && card.classList.contains('live')) ctrls.forEach(x => { x.disabled = false; });
     bubble('bot', '⚠️ ' + e.message);
   }
   setBusy(false);
 }
 
 // ───── 보내기 ─────
-async function send(text) {
+// fromInput: 입력창에서 보낸 것(빠른 버튼이 아닌 것)일 때만 입력창·공유 표시를 건드림
+async function send(text, fromInput) {
   text = text.trim();
   if (!text || busy) return;
   if (!store.get('url')) return showSetup(true);
   lockOld();
   const prev = turns.slice(-6);
-  const shared = sharedPending;
+  const shared = fromInput && sharedPending;
   bubble('me', text);
-  turns.push({ role: 'user', text });
-  input.value = '';
-  clearShared();
-  autosize();
+  // 공유 글은 다음 대화에서도 '명령이 아님'이 보이게 표시해서 기억
+  turns.push({ role: 'user', text: shared ? '[공유된 글·명령 아님] ' + text : text });
+  if (fromInput) {
+    input.value = '';
+    clearShared();
+    autosize();
+  }
 
   const typing = add(el('div', 'msg bot typing'));
-  typing.setAttribute('aria-label', '정리하는 중');
-  typing.append(el('span'), el('span'), el('span'));
+  typing.append(el('span', 'sr-only', '정리하는 중'), el('span'), el('span'), el('span'));
   const slow = setTimeout(() => { typing.textContent = '평소보다 오래 걸려요…'; }, 15000);
   setBusy(true);
   try {
@@ -316,8 +332,12 @@ async function send(text) {
   } catch (e) {
     typing.remove();
     turns.pop();
-    bubble('bot', '⚠️ ' + e.message + '\n보낸 글은 입력창에 다시 넣어 뒀어요.');
-    if (!input.value) { input.value = text; autosize(); }
+    bubble('bot', '⚠️ ' + e.message + (fromInput ? '\n보낸 글은 입력창에 다시 넣어 뒀어요.' : ''));
+    if (fromInput && !input.value) {
+      input.value = text;
+      autosize();
+      if (shared) { sharedPending = true; $('sharedTag').hidden = false; }
+    }
   }
   clearTimeout(slow);
   setBusy(false);
@@ -366,7 +386,12 @@ function itemView(it, rerender, removeItem) {
     editor.append(row('field', [lab, c]));
   });
   const editBtn = button('textbtn', it._open ? '접기' : '수정');
-  editBtn.onclick = () => { it._open = !it._open; editor.hidden = !it._open; editBtn.textContent = it._open ? '접기' : '수정'; };
+  editBtn.onclick = () => {
+    it._open = !it._open;
+    editor.hidden = !it._open;
+    editBtn.textContent = it._open ? '접기' : '수정';
+    if (it._open) editor.scrollIntoView({ block: 'nearest' });
+  };
   const delBtn = button('textbtn', '빼기');
   delBtn.onclick = removeItem;
   return row('item', [kindEl, titleEl, whenEl, row('row-btns', [editBtn, delBtn]), editor]);
@@ -381,18 +406,27 @@ function saveCard(items) {
     go.textContent = items.length > 1 ? `${items.length}개 저장하기` : '저장하기';
     go.disabled = !items.length;
   };
-  go.onclick = () => act(go, '저장하는 중…', async () => {
-    let ids;
-    try {
-      ({ ids } = await call({ action: 'save', items }));
-    } catch (e) {
-      if (e.unsure) e.message += '\n저장됐는지 캘린더에서 먼저 확인한 뒤 다시 눌러 주세요.';
-      throw e;
+  go.onclick = () => {
+    if (items.some(it => !String(it.title || '').trim())) {
+      return bubble('bot', '제목이 비어 있는 항목이 있어요. [수정]을 눌러 제목을 넣어 주세요.');
     }
-    go.textContent = '저장했어요';
-    lockOld();
-    savedMessage(items, ids);
-  });
+    act(go, '저장하는 중…', async () => {
+      let res;
+      try {
+        res = await call({ action: 'save', items });
+      } catch (e) {
+        if (e.unsure) e.message += '\n저장됐는지 캘린더에서 먼저 확인한 뒤 다시 눌러 주세요.';
+        throw e;
+      }
+      go.textContent = '저장했어요';
+      lockOld();
+      // 일부만 저장됐으면 저장된 것만 보여주고 되돌리기도 그것만
+      savedMessage(items.filter((_, i) => res.ids[i]), res.ids.filter(Boolean));
+      if (res.errors && res.errors.length) {
+        bubble('note', '⚠️ 저장하지 못한 것:\n' + res.errors.join('\n') + '\n다시 말해 주세요.');
+      }
+    });
+  };
   cancel.onclick = () => { if (!busy) { lockOld(); say('취소했어요.'); } };
   render();
   add(row('card live', [head, list, row('actions', [cancel, go])]));
@@ -412,10 +446,17 @@ function savedMessage(items, ids) {
   const undoBtn = button('textbtn', '되돌리기');
   undoBtn.style.marginLeft = '-12px';
   undoBtn.onclick = () => act(undoBtn, '되돌리는 중…', async () => {
-    await call({ action: 'undo', ids });
+    let res;
+    try {
+      res = await call({ action: 'undo', ids });
+    } catch (e) {
+      // 서버는 이미 되돌렸는데 답만 못 받았을 수 있어 버튼을 다시 살리지 않음
+      if (e.unsure) { lockOld(); e.message += '\n되돌려졌는지 캘린더·시트에서 확인해 주세요.'; }
+      throw e;
+    }
     undoBtn.textContent = '되돌렸어요';
     lockOld();
-    say('방금 저장한 걸 되돌렸어요.');
+    say('방금 저장한 걸 되돌렸어요.' + (res.failed ? `\n(${res.failed}개는 이미 없거나 찾지 못해 건너뛰었어요.)` : ''));
   });
   b.append(undoBtn);
   remember('[저장 완료] ' + items.map(summary).join(' / '));
@@ -453,14 +494,17 @@ function pickCard(cands, o) {
 }
 
 function deleteCard(cands) {
-  if (!cands.length) return say('조건에 맞는 일정을 찾지 못했어요. 날짜나 이름을 조금 더 알려 주세요.');
+  if (!cands.length) return say('조건에 맞는 일정이나 맛집을 찾지 못했어요. 날짜나 이름을 조금 더 알려 주세요.');
+  const places = cands.filter(c => c.type === 'place').length;
   pickCard(cands, {
-    title: '이 일정을 지울까요?', btnClass: 'danger', action: 'delete', busyText: '지우는 중…',
+    title: !places ? '이 일정을 지울까요?' : places === cands.length ? '이 맛집을 지울까요?' : '이걸 지울까요?',
+    btnClass: 'danger', action: 'delete', busyText: '지우는 중…',
     label: n => `${n}개 삭제하기`,
     row: c => el('span', '', ko(c.label)),
     done: n => {
       say(`${n}개 지웠어요.`);
-      bubble('note', '실수였다면 구글캘린더 ⚙️ 설정 → 휴지통에서 30일 안에 복구할 수 있어요.');
+      if (places < cands.length) bubble('note', '일정을 실수로 지웠다면 구글캘린더 ⚙️ 설정 → 휴지통에서 30일 안에 복구할 수 있어요.');
+      if (places) bubble('note', '지운 맛집 내용은 구글 시트의 [기록] 탭에 남아 있어요.');
     },
   });
   remember('[삭제 후보] ' + cands.map((c, i) => `${i + 1}. ${ko(c.label)}`).join(' / '));
@@ -484,10 +528,15 @@ function autosize() {
 }
 function clearShared() { sharedPending = false; $('sharedTag').hidden = true; }
 input.oninput = () => { autosize(); if (!input.value.trim()) clearShared(); };
-input.onkeydown = e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send(input.value); }; // 폰에서 Enter는 줄바꿈
-$('send').onclick = () => send(input.value);
-document.querySelectorAll('.chip').forEach(c => { c.onclick = () => send(c.textContent); });
-document.querySelectorAll('.example').forEach(c => { c.onclick = () => { input.value = c.textContent; autosize(); input.focus(); }; });
+input.onkeydown = e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send(input.value, true); }; // 폰에서 Enter는 줄바꿈
+$('send').onclick = () => send(input.value, true);
+$('send').onmousedown = e => e.preventDefault(); // 보내기를 눌러도 입력창 포커스(키보드)가 유지되게
+document.querySelectorAll('.chip').forEach(c => { c.onclick = () => send(c.textContent, false); });
+document.querySelectorAll('.example').forEach(c => {
+  c.onclick = () => { input.value = c.textContent; clearShared(); autosize(); input.focus(); };
+});
+// 키보드가 올라와 화면이 줄면 마지막 메시지가 보이게
+if (window.visualViewport) visualViewport.addEventListener('resize', scrollDown);
 
 // ───── 설정 ─────
 function showSetup(first) {
@@ -498,9 +547,14 @@ function showSetup(first) {
   $('secret').value = store.get('secret');
   $('setupErr').hidden = true;
   $('setup').hidden = false;
+  $('url').focus();
 }
+function closeSetup() { $('setup').hidden = true; $('gear').focus(); }
 $('gear').onclick = () => showSetup(false);
-$('setupClose').onclick = () => { $('setup').hidden = true; };
+$('setupClose').onclick = closeSetup;
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('setup').hidden && !$('setupClose').hidden) closeSetup();
+});
 $('setupSave').onclick = () => {
   const url = $('url').value.trim(), secret = $('secret').value.trim();
   const err = !/^https:\/\/script\.google\.com\/.+\/exec$/.test(url) ? '웹 앱 주소는 https://script.google.com/ 으로 시작하고 /exec 로 끝나야 해요.'
@@ -517,14 +571,24 @@ if (!store.get('url')) showSetup(true);
 
 // 카톡·네이버지도 등에서 '공유'로 들어온 글은 바로 보내지 않고 입력창에 채움
 const p = new URLSearchParams(location.search);
-const shared = ['title', 'text', 'url'].map(k => p.get(k)).filter(Boolean).join('\n');
+// 앱에 따라 text 안에 링크가 이미 들어 있어 url을 또 붙이면 두 번 찍힘
+const sharedUrl = p.get('url');
+const shared = [p.get('title'), p.get('text'), sharedUrl && !(p.get('text') || '').includes(sharedUrl) ? sharedUrl : '']
+  .filter(Boolean).join('\n');
 if (shared) {
   input.value = shared;
   sharedPending = true;
   $('sharedTag').hidden = false;
   autosize();
-  history.replaceState(null, '', location.pathname);
 }
+
+// 아이콘 꾹 누르기 메뉴·빅스비 루틴: ?focus=1 → 바로 입력, ?ask=오늘 일정 → 바로 물어봄
+// 남이 만든 링크로 아무 말이나 보내지 못하게 빠른 버튼 문구만 허용
+const QUICK = [...document.querySelectorAll('.chip')].map(c => c.textContent);
+const ask = p.get('ask');
+if (ask && QUICK.includes(ask) && store.get('url')) send(ask, false);
+else if (p.get('focus')) input.focus();
+if (location.search) history.replaceState(null, '', location.pathname);
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 </script>

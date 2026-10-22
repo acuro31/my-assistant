@@ -1,6 +1,6 @@
 {
-  "name": "내 비서",
-  "short_name": "내 비서",
+  "name": "가나디 비서",
+  "short_name": "가나디 비서",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -8,7 +8,16 @@
   "theme_color": "#F2F4F6",
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "바로 말하기", "short_name": "말하기", "url": "./?focus=1",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "오늘 일정", "short_name": "오늘 일정", "url": "./?ask=%EC%98%A4%EB%8A%98%20%EC%9D%BC%EC%A0%95",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "저장한 맛집", "short_name": "저장한 맛집", "url": "./?ask=%EC%A0%80%EC%9E%A5%ED%95%9C%20%EB%A7%9B%EC%A7%91",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }] }
   ],
   "share_target": {
     "action": "./",

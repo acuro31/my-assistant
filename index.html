@@ -2,222 +2,521 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- interactive-widget: 키보드가 올라오면 화면 높이가 줄어 입력창이 가려지지 않음 -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>내 비서</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
-<meta name="theme-color" content="#6b4f3a">
+<meta name="theme-color" content="#F2F4F6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#17171C" media="(prefers-color-scheme: dark)">
 <style>
-  :root { --bg:#faf7f2; --card:#fff; --text:#2b2b2b; --muted:#777; --accent:#6b4f3a; --line:#e5ded3; }
+  :root {
+    --bg: #F2F4F6; --card: #FFFFFF; --text: #191F28; --sub: #6B7684; --label: #8B95A1; --line: #E5E8EB;
+    --primary: #2272EB; --accent-text: #2272EB; --secondary: #F2F4F6; --danger: #E42939;
+  }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#1d1a17; --card:#2a2622; --text:#eee; --muted:#aaa; --accent:#c9a27e; --line:#3d3731; }
+    :root {
+      --bg: #17171C; --card: #2C2C35; --text: #ECECEC; --sub: #9E9EA7; --label: #9E9EA7; --line: #3A3A44;
+      --primary: #2272EB; --accent-text: #6AA8FF; --secondary: #3A3A44; --danger: #E42939;
+    }
   }
   * { box-sizing: border-box; }
-  body { margin: 0 auto; padding: 16px; max-width: 560px; background: var(--bg); color: var(--text);
-         font-family: system-ui, sans-serif; font-size: 16px; }
-  h1 { font-size: 20px; display: flex; justify-content: space-between; align-items: center; }
-  textarea, input, select { width: 100%; font: inherit; padding: 10px; border: 1px solid var(--line);
-         border-radius: 10px; background: var(--card); color: var(--text); }
-  textarea { min-height: 110px; }
-  button { font: inherit; padding: 12px 16px; border: 0; border-radius: 10px; background: var(--accent); color: #fff; }
-  button.sub { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
-  button:disabled { opacity: .5; }
-  .row { display: flex; gap: 8px; margin-top: 10px; }
-  .row > * { flex: 1; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-top: 12px; }
-  .card label { display: block; font-size: 13px; color: var(--muted); margin-top: 8px; }
-  #msg { margin-top: 12px; white-space: pre-line; }
-  #msg a { display: block; margin-top: 8px; color: var(--accent); }
-  #msg button { display: block; width: 100%; margin-top: 12px; }
-  button.danger { background: #b3261e; }
-  .card.del { display: flex; gap: 10px; align-items: center; }
-  .card.del input { width: auto; flex: none; transform: scale(1.3); }
-  .hidden { display: none; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; display: flex; flex-direction: column; height: 100dvh;
+    background: var(--bg); color: var(--text); font-size: 16px; -webkit-tap-highlight-color: transparent;
+    word-break: keep-all; overflow-wrap: anywhere; /* 한글은 단어 단위로 줄바꿈, 긴 링크는 아무 데서나 */
+    font-family: system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  button:disabled { cursor: default; }
+  :focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: calc(8px + env(safe-area-inset-top)) 8px 8px 20px;
+  }
+  h1 { font-size: 20px; font-weight: 700; margin: 0; }
+  h1 small { font-size: 12px; font-weight: 400; color: var(--label); margin-left: 4px; }
+  .icon { width: 44px; height: 44px; border: 0; border-radius: 12px; background: none; font-size: 20px; }
+
+  #chat { flex: 1; overflow-y: auto; padding: 8px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .msg {
+    max-width: 85%; padding: 12px 14px; border-radius: 18px; line-height: 1.5;
+    white-space: pre-wrap;
+  }
+  .me { align-self: flex-end; background: var(--primary); color: #fff; border-bottom-right-radius: 6px; }
+  .bot { align-self: flex-start; background: var(--card); border-bottom-left-radius: 6px; }
+  .note { align-self: flex-start; font-size: 14px; color: var(--sub); padding: 0 6px; }
+  .saved-line { color: var(--sub); font-size: 15px; }
+  .maplink { display: block; margin-top: 8px; color: var(--accent-text); font-weight: 600; }
+
+  .typing { display: flex; gap: 5px; align-items: center; min-height: 48px; }
+  .typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--label); animation: blink 1.2s infinite; }
+  .typing span:nth-child(2) { animation-delay: .2s; }
+  .typing span:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: .3; } 40% { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .typing span { animation: none; } }
+
+  .card { align-self: stretch; background: var(--card); border-radius: 20px; padding: 20px; }
+  .card-title { font-size: 19px; font-weight: 700; margin-bottom: 4px; }
+  .hint { font-size: 14px; color: var(--sub); margin-bottom: 4px; }
+  .item { padding: 14px 0; border-top: 1px solid var(--line); }
+  .item:first-child { border-top: 0; }
+  .kind { font-size: 13px; color: var(--label); }
+  .title { font-size: 17px; font-weight: 700; margin-top: 2px; }
+  .when { font-size: 15px; color: var(--sub); margin-top: 4px; }
+  .row-btns { display: flex; gap: 4px; margin: 4px 0 0 -12px; }
+  .textbtn {
+    min-height: 44px; padding: 0 12px; border: 0; background: none;
+    color: var(--accent-text); font-size: 15px; font-weight: 600;
+  }
+  .textbtn:disabled { color: var(--label); }
+  .field label { display: block; font-size: 13px; color: var(--sub); margin: 10px 0 4px; }
+  .field input, .field select {
+    width: 100%; min-height: 48px; padding: 0 14px; border: 0; border-radius: 12px; background: var(--bg);
+  }
+  .check { display: flex; gap: 12px; align-items: flex-start; padding: 14px 0; border-top: 1px solid var(--line); line-height: 1.45; }
+  .check:first-of-type { border-top: 0; }
+  .check input { width: 22px; height: 22px; margin: 1px 0 0; flex: none; accent-color: var(--primary); }
+  .before { display: block; color: var(--sub); font-size: 14px; text-decoration: line-through; }
+  .after { display: block; font-weight: 700; }
+
+  .actions { display: flex; gap: 8px; margin-top: 16px; }
+  .btn { flex: 1; min-height: 52px; border: 0; border-radius: 14px; font-size: 17px; font-weight: 700; }
+  .btn.secondary { flex: 0 0 34%; background: var(--secondary); }
+  .btn.primary { background: var(--primary); color: #fff; }
+  .btn.danger { background: var(--danger); color: #fff; }
+  .btn:disabled { opacity: .4; }
+
+  #welcome { margin: auto 0; padding: 24px 4px; }
+  #welcome h2 { font-size: 24px; margin: 0 0 6px; }
+  .sub { color: var(--sub); margin: 0 0 16px; line-height: 1.5; }
+  .example {
+    display: block; width: 100%; margin-top: 8px; padding: 14px 16px; border: 0; border-radius: 16px;
+    background: var(--card); text-align: left; min-height: 48px;
+  }
+
+  footer { padding: 6px 12px calc(8px + env(safe-area-inset-bottom)); }
+  #chips { display: flex; gap: 8px; overflow-x: auto; padding: 2px 4px 8px; scrollbar-width: none; }
+  #chips::-webkit-scrollbar { display: none; }
+  .chip { flex: none; min-height: 40px; padding: 0 14px; border: 0; border-radius: 20px; background: var(--card); font-size: 14px; font-weight: 600; }
+  .chip:disabled { opacity: .5; }
+  #sharedTag { font-size: 13px; color: var(--accent-text); padding: 0 8px 6px; }
+  .inputbar { display: flex; align-items: flex-end; gap: 8px; background: var(--card); border-radius: 24px; padding: 6px 6px 6px 16px; }
+  #text {
+    flex: 1; border: 0; background: transparent; resize: none; outline: none;
+    line-height: 22px; padding: 11px 0; max-height: 154px; /* 6줄까지 늘어남 */
+  }
+  #send {
+    width: 44px; height: 44px; flex: none; border: 0; border-radius: 50%; background: var(--primary);
+    display: grid; place-items: center;
+  }
+  #send:disabled { opacity: .4; }
+
+  .sheet { position: fixed; inset: 0; z-index: 10; display: flex; align-items: flex-end; background: rgba(0, 0, 0, .45); }
+  .sheet-body {
+    width: 100%; max-width: 560px; margin: 0 auto; background: var(--card); border-radius: 24px 24px 0 0;
+    padding: 24px 20px calc(20px + env(safe-area-inset-bottom));
+  }
+  .sheet-body h2 { font-size: 22px; margin: 0 0 6px; }
+  .err { color: var(--danger); font-size: 14px; margin: 10px 0 0; }
 </style>
 </head>
 <body>
-<h1><span>☕ 내 비서 <small style="font-size:12px;color:var(--muted)">v4</small></span> <button class="sub" id="gear" aria-label="설정">⚙️</button></h1>
+<header>
+  <h1>내 비서<small>v5</small></h1>
+  <button id="gear" class="icon" aria-label="설정">⚙️</button>
+</header>
 
-<section id="setup" class="card hidden">
-  <label>웹 앱 URL<input id="url" placeholder="https://script.google.com/macros/s/.../exec"></label>
-  <label>비밀번호<input id="secret" type="password"></label>
-  <div class="row"><button id="saveSetup">설정 저장</button></div>
-</section>
+<main id="chat" role="log" aria-live="polite">
+  <div id="welcome">
+    <h2>무엇이든 말해 주세요</h2>
+    <p class="sub">일정·할 일·맛집을 정리하고, 물어보면 찾아 드려요.</p>
+    <button class="example">28일 오후 2시 원두 발주창 열림</button>
+    <button class="example">이번주 케이크 예약 뭐 있어?</button>
+    <button class="example">다음주 김민지님 케이크 예약 4시로 바꿔줘</button>
+  </div>
+</main>
 
-<textarea id="text" placeholder="예) 28일 오후 2시 원두 발주창 열림&#10;예) 이번주 케이크 예약 뭐 있어?&#10;예) 다음주 케이크 예약 다 지워줘"></textarea>
-<div class="row"><button id="analyze">보내기</button></div>
+<footer>
+  <div id="chips">
+    <button class="chip">오늘 일정</button>
+    <button class="chip">내일 일정</button>
+    <button class="chip">이번주 케이크 예약</button>
+    <button class="chip">할 일 목록</button>
+  </div>
+  <div id="sharedTag" hidden>다른 앱에서 가져온 글이에요. 다듬어서 보내 주세요.</div>
+  <div class="inputbar">
+    <textarea id="text" rows="1" placeholder="말하거나 적어 주세요 (키보드 🎤)" aria-label="메시지"></textarea>
+    <button id="send" aria-label="보내기">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+    </button>
+  </div>
+</footer>
 
-<div id="items"></div>
-<div class="row hidden" id="actions">
-  <button class="sub" id="cancel">취소</button>
-  <button id="save">저장</button>
+<div id="setup" class="sheet" hidden>
+  <div class="sheet-body" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
+    <h2 id="setupTitle">설정</h2>
+    <p id="setupDesc" class="sub">Apps Script 웹 앱 주소와 비밀번호를 넣어 주세요. 이 폰에만 저장돼요.</p>
+    <div class="field"><label for="url">웹 앱 주소</label><input id="url" inputmode="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec"></div>
+    <div class="field"><label for="secret">비밀번호</label><input id="secret" type="password" autocomplete="off"></div>
+    <p id="setupErr" class="err" hidden></p>
+    <div class="actions">
+      <button id="setupClose" class="btn secondary">닫기</button>
+      <button id="setupSave" class="btn primary">저장하기</button>
+    </div>
+  </div>
 </div>
-<div id="dels"></div>
-<div class="row hidden" id="delActions">
-  <button class="sub" id="delCancel">취소</button>
-  <button class="danger" id="delGo">🗑️ 체크한 일정 삭제</button>
-</div>
-<div id="msg" role="status"></div>
 
 <script>
 const KINDS = {
   카페_발주할일: '📦 발주할 일', 카페_발주창: '⏰ 발주창', 카페_케이크예약: '🎂 케이크 예약',
   카페_기타: '☕ 카페 기타', 개인약속: '🙂 개인 약속', 할일: '✅ 할 일', 맛집: '🍽️ 맛집', 맛집_후기: '⭐ 맛집 후기',
 };
+const LABELS = { kind: '종류', title: '제목', date: '날짜', time: '시간', repeat: '반복', place: '장소', memo: '메모', rating: '별점' };
+const W = ['일', '월', '화', '수', '목', '금', '토'];
 const $ = id => document.getElementById(id);
+const chat = $('chat'), input = $('text');
 // 설정은 이 폰에만 저장 (GitHub에 공개되는 코드에 주소/비밀번호를 넣지 않기 위해)
 const store = {
   get: k => { try { return localStorage.getItem(k) || ''; } catch { return ''; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
 };
-let items = [];
 
-function say(...parts) { $('msg').replaceChildren(...parts); }
+let busy = false;
+let turns = [];        // AI에게 보낼 최근 대화 (앱을 닫으면 사라짐)
+let sharedPending = false;
+let uid = 0;
 
-function mapLink(it) {
-  return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent((it.place + ' ' + it.title).trim());
+// ───── 작은 도우미 ─────
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
 }
+function button(cls, text) { const b = el('button', cls, text); b.type = 'button'; return b; }
+function row(cls, children) { const d = el('div', cls); d.append(...children); return d; }
+function scrollDown() { requestAnimationFrame(() => { chat.scrollTop = chat.scrollHeight; }); }
+function add(node) { $('welcome')?.remove(); chat.append(node); scrollDown(); return node; }
+function bubble(cls, text) { return add(el('div', 'msg ' + cls, text)); }
+function remember(text) {
+  turns.push({ role: 'assistant', text });
+  if (turns.length > 20) turns.splice(0, turns.length - 20);
+}
+function say(text) { bubble('bot', text); remember(text); }
 
+// 서버 라벨의 영어 요일 (Fri) → (금)
+const EN = { Sun: '일', Mon: '월', Tue: '화', Wed: '수', Thu: '목', Fri: '금', Sat: '토' };
+const ko = s => String(s).replace(/\((Sun|Mon|Tue|Wed|Thu|Fri|Sat)\)/g, (_, d) => `(${EN[d]})`);
+
+// '2026-10-27' → '10/27(화)', 다른 해면 '2027/01/05(화)'
+function day(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || '');
+  if (!m) return s;
+  const w = W[new Date(Date.UTC(+m[1], m[2] - 1, +m[3])).getUTCDay()];
+  return `${+m[1] !== new Date().getFullYear() ? m[1] + '/' : ''}${m[2]}/${m[3]}(${w})`;
+}
+const stars = r => r ? '★'.repeat(r) + '☆'.repeat(5 - r) : '별점 없음';
+
+function whenText(it) {
+  if (it.kind === '맛집') return it.place || '장소 없음';
+  if (it.kind === '맛집_후기') return stars(+it.rating) + (it.date ? ` · ${day(it.date)} 다녀옴` : '');
+  if (it.kind === '할일') return it.date ? '마감 ' + day(it.date) : '날짜 없음';
+  if (!it.date) return '날짜 없음 → 할 일로 저장돼요';
+  const time = it.time || (it.kind === '카페_발주할일' ? '10:00' : '하루종일');
+  return `${day(it.date)} ${time} · ${it.kind.startsWith('카페') ? '카페 업무' : '개인 캘린더'}` +
+    (it.repeat ? ` · ${it.repeat} 반복` : '');
+}
+const summary = it => `${KINDS[it.kind] || it.kind} ${it.title} · ${whenText(it)}`;
+const mapLink = it => 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent((it.place + ' ' + it.title).trim());
+
+// ───── 서버 통신 ─────
 // 헤더 없이 보내야 브라우저가 사전 확인(CORS preflight)을 하지 않아 Apps Script와 통신됨
 async function call(body) {
-  const res = await fetch(store.get('url'), {
-    method: 'POST',
-    body: JSON.stringify({ ...body, secret: store.get('secret') }),
-  });
-  const data = await res.json();
+  let res, data;
+  try {
+    res = await fetch(store.get('url'), { method: 'POST', body: JSON.stringify({ ...body, secret: store.get('secret') }) });
+  } catch {
+    throw Object.assign(new Error('인터넷이 불안정해요. 연결을 확인하고 다시 시도해 주세요.'), { unsure: true });
+  }
+  try {
+    data = await res.json();
+  } catch {
+    throw Object.assign(new Error('서버 답이 이상해요. ⚙️ 설정의 웹 앱 주소를 확인해 주세요.'), { unsure: true });
+  }
   if (data.error) throw new Error(data.error);
   return data;
 }
 
-function render() {
-  $('items').replaceChildren();
-  items.forEach((it, i) => {
-    const c = document.createElement('div');
-    c.className = 'card';
-    c.innerHTML = `
-      <label>종류<select data-k="kind">${Object.entries(KINDS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>
-      <label>제목<input data-k="title"></label>
-      <div class="row"><label>날짜<input type="date" data-k="date"></label><label>시간<input type="time" data-k="time"></label></div>
-      <div class="row"><label>반복<select data-k="repeat"><option value="">없음</option><option>매일</option><option>매주</option><option>매월</option></select></label><label>별점<input type="number" min="1" max="5" data-k="rating"></label></div>
-      <label>장소<input data-k="place"></label>
-      <label>메모<input data-k="memo"></label>
-      <div class="row"><button class="sub" data-del>이 항목 빼기</button></div>`;
-    c.querySelectorAll('[data-k]').forEach(el => {
-      el.value = it[el.dataset.k];
-      el.oninput = () => { it[el.dataset.k] = el.value; };
-    });
-    c.querySelector('[data-del]').onclick = () => { items.splice(i, 1); render(); };
-    $('items').append(c);
+function setBusy(b) {
+  busy = b;
+  $('send').disabled = b;
+  document.querySelectorAll('.chip, .example').forEach(c => { c.disabled = b; });
+}
+
+// 새 메시지를 보내면 예전 카드의 버튼을 모두 잠금 (오래된 [되돌리기]가 엉뚱한 걸 지우지 않게)
+function lockOld() {
+  document.querySelectorAll('.live').forEach(c => {
+    c.classList.remove('live');
+    c.querySelectorAll('button, input, select').forEach(x => { x.disabled = true; });
   });
-  $('actions').classList.toggle('hidden', !items.length);
 }
 
-$('analyze').onclick = async () => {
-  const text = $('text').value.trim();
-  if (!text) return;
-  if (!store.get('url')) { $('setup').classList.remove('hidden'); return say('먼저 ⚙️ 설정을 해 주세요'); }
-  say('🤖 정리하는 중...');
-  $('analyze').disabled = true;
+async function act(btn, busyText, fn) {
+  if (busy) return;
+  const old = btn.textContent;
+  btn.textContent = busyText;
+  setBusy(true);
   try {
-    const r = await call({ action: 'analyze', text });
-    items = r.items || [];
-    dels = r.candidates || [];
-    render();
-    renderDels();
-    if (r.answer) say('💬 ' + r.answer);
-    else if (r.candidates) say(dels.length ? '🗑️ 지울 일정이 맞는지 확인해 주세요. 체크된 것만 지워져요' : '조건에 맞는 일정을 찾지 못했어요');
-    else say(items.length ? '맞는지 확인하고 [저장]을 눌러 주세요' : '저장할 내용을 찾지 못했어요');
+    await fn();
   } catch (e) {
-    say('⚠️ ' + e.message);
+    btn.textContent = old;
+    bubble('bot', '⚠️ ' + e.message);
   }
-  $('analyze').disabled = false;
-};
+  setBusy(false);
+}
 
-$('save').onclick = async () => {
-  say('💾 저장하는 중...');
-  $('save').disabled = true;
+// ───── 보내기 ─────
+async function send(text) {
+  text = text.trim();
+  if (!text || busy) return;
+  if (!store.get('url')) return showSetup(true);
+  lockOld();
+  const prev = turns.slice(-6);
+  const shared = sharedPending;
+  bubble('me', text);
+  turns.push({ role: 'user', text });
+  input.value = '';
+  clearShared();
+  autosize();
+
+  const typing = add(el('div', 'msg bot typing'));
+  typing.setAttribute('aria-label', '정리하는 중');
+  typing.append(el('span'), el('span'), el('span'));
+  const slow = setTimeout(() => { typing.textContent = '평소보다 오래 걸려요…'; }, 15000);
+  setBusy(true);
   try {
-    const { ids } = await call({ action: 'save', items });
-    const undoBtn = document.createElement('button');
-    undoBtn.className = 'sub';
-    undoBtn.textContent = '↩️ 방금 저장한 것 되돌리기';
-    undoBtn.onclick = async () => {
-      undoBtn.disabled = true;
-      try { await call({ action: 'undo', ids }); say('↩️ 되돌렸어요'); }
-      catch (e) { say('⚠️ ' + e.message); }
-    };
-    const links = items.filter(it => it.kind === '맛집').map(it => {
-      const a = document.createElement('a');
-      a.href = mapLink(it);
-      a.target = '_blank';
-      a.textContent = `📍 ${it.title} — 구글맵에서 ⭐저장하기`;
-      return a;
-    });
-    say('✅ 저장 완료!\n' + items.map(it => KINDS[it.kind] + ' ' + it.title).join('\n'), ...links, undoBtn);
-    items = [];
-    render();
-    $('text').value = '';
+    const r = await call({ action: 'analyze', text, shared, history: prev });
+    typing.remove();
+    if (r.answer) say(r.answer);
+    else if (r.candidates) deleteCard(r.candidates);
+    else if (r.edits) editCard(r.edits);
+    else if (r.items && r.items.length) saveCard(r.items);
+    else say('무엇을 하면 될지 잘 모르겠어요. 조금만 더 자세히 말해 주세요.');
   } catch (e) {
-    say('⚠️ ' + e.message);
+    typing.remove();
+    turns.pop();
+    bubble('bot', '⚠️ ' + e.message + '\n보낸 글은 입력창에 다시 넣어 뒀어요.');
+    if (!input.value) { input.value = text; autosize(); }
   }
-  $('save').disabled = false;
-};
+  clearTimeout(slow);
+  setBusy(false);
+}
 
-$('cancel').onclick = () => { items = []; render(); say(''); };
+// ───── 저장 확인 카드 ─────
+function fieldsFor(kind) {
+  if (kind === '할일') return ['kind', 'title', 'date', 'memo'];
+  if (kind === '맛집') return ['kind', 'title', 'place', 'memo'];
+  if (kind === '맛집_후기') return ['kind', 'title', 'rating', 'date', 'memo'];
+  return ['kind', 'title', 'date', 'time', 'repeat', 'place', 'memo'];
+}
+function labelFor(k, kind) {
+  if (k === 'date' && kind === '할일') return '마감일';
+  if (k === 'date' && kind === '맛집_후기') return '다녀온 날';
+  return LABELS[k];
+}
+function control(k, it, changed) {
+  let c;
+  const options = list => { c = el('select'); list.forEach(([v, t]) => { const o = el('option', '', t); o.value = v; c.append(o); }); };
+  if (k === 'kind') options(Object.entries(KINDS));
+  else if (k === 'repeat') options([['', '없음'], ['매일', '매일'], ['매주', '매주'], ['매월', '매월']]);
+  else if (k === 'rating') options([['', '없음'], ...[1, 2, 3, 4, 5].map(n => [String(n), '★'.repeat(n)])]);
+  else { c = el('input'); c.type = k === 'date' ? 'date' : k === 'time' ? 'time' : 'text'; }
+  c.value = it[k] || '';
+  c[c.tagName === 'SELECT' ? 'onchange' : 'oninput'] = () => { it[k] = c.value; changed(k); };
+  return c;
+}
 
-// ───── 삭제: 후보 목록 → 체크된 것만 삭제 ─────
-let dels = [];
+function itemView(it, rerender, removeItem) {
+  const kindEl = el('div', 'kind'), titleEl = el('div', 'title'), whenEl = el('div', 'when');
+  const paint = () => {
+    kindEl.textContent = KINDS[it.kind] || it.kind;
+    titleEl.textContent = it.title || '(제목 없음)';
+    whenEl.textContent = whenText(it);
+  };
+  paint();
+  const editor = el('div');
+  editor.hidden = !it._open;
+  fieldsFor(it.kind).forEach(k => {
+    const id = 'f' + (++uid);
+    const lab = el('label', '', labelFor(k, it.kind));
+    lab.htmlFor = id;
+    const c = control(k, it, changed => (changed === 'kind' ? rerender() : paint()));
+    c.id = id;
+    editor.append(row('field', [lab, c]));
+  });
+  const editBtn = button('textbtn', it._open ? '접기' : '수정');
+  editBtn.onclick = () => { it._open = !it._open; editor.hidden = !it._open; editBtn.textContent = it._open ? '접기' : '수정'; };
+  const delBtn = button('textbtn', '빼기');
+  delBtn.onclick = removeItem;
+  return row('item', [kindEl, titleEl, whenEl, row('row-btns', [editBtn, delBtn]), editor]);
+}
 
-function renderDels() {
-  $('dels').replaceChildren(...dels.map(d => {
-    d.on = true;
-    const l = document.createElement('label');
-    l.className = 'card del';
-    const cb = document.createElement('input');
+function saveCard(items) {
+  const head = el('div', 'card-title'), list = el('div');
+  const go = button('btn primary'), cancel = button('btn secondary', '취소');
+  const render = () => {
+    head.textContent = items.length > 1 ? `${items.length}개를 저장할까요?` : '이렇게 저장할까요?';
+    list.replaceChildren(...items.map((it, i) => itemView(it, render, () => { items.splice(i, 1); render(); })));
+    go.textContent = items.length > 1 ? `${items.length}개 저장하기` : '저장하기';
+    go.disabled = !items.length;
+  };
+  go.onclick = () => act(go, '저장하는 중…', async () => {
+    let ids;
+    try {
+      ({ ids } = await call({ action: 'save', items }));
+    } catch (e) {
+      if (e.unsure) e.message += '\n저장됐는지 캘린더에서 먼저 확인한 뒤 다시 눌러 주세요.';
+      throw e;
+    }
+    go.textContent = '저장했어요';
+    lockOld();
+    savedMessage(items, ids);
+  });
+  cancel.onclick = () => { if (!busy) { lockOld(); say('취소했어요.'); } };
+  render();
+  add(row('card live', [head, list, row('actions', [cancel, go])]));
+  remember('[저장 확인 중] ' + items.map(summary).join(' / '));
+}
+
+function savedMessage(items, ids) {
+  const b = bubble('bot live', '');
+  b.append(el('div', '', '저장했어요 ✅'), ...items.map(it => el('div', 'saved-line', '· ' + summary(it))));
+  items.filter(it => it.kind === '맛집').forEach(it => {
+    const a = el('a', 'maplink', `📍 ${it.title} — 지도에서 ⭐저장하기`);
+    a.href = mapLink(it);
+    a.target = '_blank';
+    a.rel = 'noopener';
+    b.append(a);
+  });
+  const undoBtn = button('textbtn', '되돌리기');
+  undoBtn.style.marginLeft = '-12px';
+  undoBtn.onclick = () => act(undoBtn, '되돌리는 중…', async () => {
+    await call({ action: 'undo', ids });
+    undoBtn.textContent = '되돌렸어요';
+    lockOld();
+    say('방금 저장한 걸 되돌렸어요.');
+  });
+  b.append(undoBtn);
+  remember('[저장 완료] ' + items.map(summary).join(' / '));
+}
+
+// ───── 체크해서 고르는 카드 (삭제·수정 공용) ─────
+function pickCard(cands, o) {
+  const many = cands.length > 5; // 많으면 실수로 다 지우지 않게 처음엔 모두 해제
+  cands.forEach(c => { c.on = !many; });
+  const go = button('btn ' + o.btnClass), cancel = button('btn secondary', '취소');
+  const update = () => {
+    const n = cands.filter(c => c.on).length;
+    go.textContent = n ? o.label(n) : '골라 주세요';
+    go.disabled = !n;
+  };
+  const rows = cands.map(c => {
+    const r = el('label', 'check');
+    const cb = el('input');
     cb.type = 'checkbox';
-    cb.checked = true;
-    cb.onchange = () => { d.on = cb.checked; };
-    l.append(cb, d.label);
-    return l;
-  }));
-  $('delActions').classList.toggle('hidden', !dels.length);
+    cb.checked = c.on;
+    cb.onchange = () => { c.on = cb.checked; update(); };
+    r.append(cb, o.row(c));
+    return r;
+  });
+  go.onclick = () => act(go, o.busyText, async () => {
+    const { count } = await call({ action: o.action, targets: cands.filter(c => c.on) });
+    go.textContent = '완료';
+    lockOld();
+    if (count) o.done(count);
+    else say('일정을 찾지 못했어요. 이미 바뀌었거나 지워졌을 수 있어요.');
+  });
+  cancel.onclick = () => { if (!busy) { lockOld(); say('취소했어요.'); } };
+  update();
+  add(row('card live', [el('div', 'card-title', o.title), ...(many ? [el('div', 'hint', '많아서 직접 골라 주세요')] : []), ...rows, row('actions', [cancel, go])]));
 }
 
-$('delGo').onclick = async () => {
-  const targets = dels.filter(d => d.on);
-  if (!targets.length) return say('체크된 일정이 없어요');
-  say('🗑️ 지우는 중...');
-  $('delGo').disabled = true;
-  try {
-    const { count } = await call({ action: 'delete', targets });
-    say(`🗑️ ${count}개 지웠어요.\n실수였다면 구글캘린더 ⚙️ → 휴지통에서 30일 안에 복구할 수 있어요.`);
-    dels = [];
-    renderDels();
-    $('text').value = '';
-  } catch (e) {
-    say('⚠️ ' + e.message);
-  }
-  $('delGo').disabled = false;
+function deleteCard(cands) {
+  if (!cands.length) return say('조건에 맞는 일정을 찾지 못했어요. 날짜나 이름을 조금 더 알려 주세요.');
+  pickCard(cands, {
+    title: '이 일정을 지울까요?', btnClass: 'danger', action: 'delete', busyText: '지우는 중…',
+    label: n => `${n}개 삭제하기`,
+    row: c => el('span', '', ko(c.label)),
+    done: n => {
+      say(`${n}개 지웠어요.`);
+      bubble('note', '실수였다면 구글캘린더 ⚙️ 설정 → 휴지통에서 30일 안에 복구할 수 있어요.');
+    },
+  });
+  remember('[삭제 후보] ' + cands.map((c, i) => `${i + 1}. ${ko(c.label)}`).join(' / '));
+}
+
+function editCard(cands) {
+  if (!cands.length) return say('고칠 일정을 찾지 못했어요. 날짜나 이름을 조금 더 알려 주세요.');
+  pickCard(cands, {
+    title: '이렇게 바꿀까요?', btnClass: 'primary', action: 'update', busyText: '바꾸는 중…',
+    label: n => `${n}개 바꾸기`,
+    row: c => row('', [el('span', 'before', ko(c.before)), el('span', 'after', '→ ' + ko(c.after))]),
+    done: n => say(`${n}개 바꿨어요.`),
+  });
+  remember('[수정 후보] ' + cands.map((c, i) => `${i + 1}. ${ko(c.before)} → ${ko(c.after)}`).join(' / '));
+}
+
+// ───── 입력창 ─────
+function autosize() {
+  input.style.height = 'auto';
+  input.style.height = input.scrollHeight + 'px';
+}
+function clearShared() { sharedPending = false; $('sharedTag').hidden = true; }
+input.oninput = () => { autosize(); if (!input.value.trim()) clearShared(); };
+input.onkeydown = e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send(input.value); }; // 폰에서 Enter는 줄바꿈
+$('send').onclick = () => send(input.value);
+document.querySelectorAll('.chip').forEach(c => { c.onclick = () => send(c.textContent); });
+document.querySelectorAll('.example').forEach(c => { c.onclick = () => { input.value = c.textContent; autosize(); input.focus(); }; });
+
+// ───── 설정 ─────
+function showSetup(first) {
+  $('setupTitle').textContent = first ? '처음이시네요 👋' : '설정';
+  $('setupDesc').hidden = !first;
+  $('setupClose').hidden = first && !store.get('url');
+  $('url').value = store.get('url');
+  $('secret').value = store.get('secret');
+  $('setupErr').hidden = true;
+  $('setup').hidden = false;
+}
+$('gear').onclick = () => showSetup(false);
+$('setupClose').onclick = () => { $('setup').hidden = true; };
+$('setupSave').onclick = () => {
+  const url = $('url').value.trim(), secret = $('secret').value.trim();
+  const err = !/^https:\/\/script\.google\.com\/.+\/exec$/.test(url) ? '웹 앱 주소는 https://script.google.com/ 으로 시작하고 /exec 로 끝나야 해요.'
+    : !secret ? '비밀번호를 넣어 주세요.' : '';
+  $('setupErr').textContent = err;
+  $('setupErr').hidden = !err;
+  if (err) return;
+  store.set('url', url);
+  store.set('secret', secret);
+  $('setup').hidden = true;
+  input.focus();
 };
+if (!store.get('url')) showSetup(true);
 
-$('delCancel').onclick = () => { dels = []; renderDels(); say(''); };
-
-$('url').value = store.get('url');
-$('secret').value = store.get('secret');
-$('gear').onclick = () => $('setup').classList.toggle('hidden');
-$('saveSetup').onclick = () => {
-  store.set('url', $('url').value.trim());
-  store.set('secret', $('secret').value.trim());
-  $('setup').classList.add('hidden');
-  say('설정이 저장됐어요');
-};
-if (!store.get('url')) $('setup').classList.remove('hidden');
-
-// 카톡·네이버지도 등에서 '공유'로 들어온 글을 입력창에 채움
+// 카톡·네이버지도 등에서 '공유'로 들어온 글은 바로 보내지 않고 입력창에 채움
 const p = new URLSearchParams(location.search);
 const shared = ['title', 'text', 'url'].map(k => p.get(k)).filter(Boolean).join('\n');
 if (shared) {
-  $('text').value = shared;
+  input.value = shared;
+  sharedPending = true;
+  $('sharedTag').hidden = false;
+  autosize();
   history.replaceState(null, '', location.pathname);
 }
 

@@ -130,11 +130,18 @@
   .sheet-body h2 { font-size: 22px; margin: 0 0 6px; }
   .err { color: var(--danger-text); font-size: 14px; margin: 10px 0 0; }
   .mascot { display: block; border-radius: 18px; margin-bottom: 12px; }
+  .search { width: 100%; min-height: 48px; margin: 8px 0; padding: 0 14px; border: 0; border-radius: 12px; background: var(--bg); }
+  .filters { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: none; }
+  .fchip { flex: none; min-height: 36px; padding: 0 12px; border: 0; border-radius: 18px; background: var(--bg); font-size: 14px; }
+  .fchip[aria-pressed="true"] { background: var(--primary); color: #fff; font-weight: 600; }
+  .prow { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .pmemo { font-size: 15px; margin-top: 4px; }
+  a.textbtn { display: inline-flex; align-items: center; text-decoration: none; }
 </style>
 </head>
 <body>
 <header>
-  <h1>가나디 비서<small>v12</small></h1>
+  <h1>가나디 비서<small>v13</small></h1>
   <button id="gear" class="icon" aria-label="설정">⚙️</button>
 </header>
 
@@ -185,7 +192,9 @@ const KINDS = {
   카페_발주할일: '📦 발주할 일', 카페_발주창: '⏰ 발주창', 카페_케이크예약: '🎂 케이크 예약',
   카페_기타: '☕ 카페 기타', 개인약속: '🙂 개인 약속', 할일: '✅ 할 일', 맛집: '🍽️ 맛집', 맛집_후기: '⭐ 맛집 후기',
 };
-const LABELS = { kind: '종류', title: '제목', date: '날짜', time: '시간', end: '끝 시간', repeat: '반복', place: '장소', memo: '메모', rating: '별점' };
+const LABELS = { kind: '종류', title: '제목', date: '날짜', time: '시간', end: '끝 시간', repeat: '반복', place: '장소', memo: '메모', rating: '별점', category: '분류', food: '음식' };
+// 맛집 분류 (Code.gs의 CATEGORIES와 같아야 함)
+const CATEGORIES = ['한식', '중식', '일식', '양식', '아시안', '카페·디저트', '술집', '분식', '기타'];
 const W = ['일', '월', '화', '수', '목', '금', '토'];
 const $ = id => document.getElementById(id);
 const chat = $('chat'), input = $('text');
@@ -195,7 +204,7 @@ const store = {
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
 };
 
-const NEED_SERVER = 's11'; // Code.gs의 SERVER_VERSION과 같아야 함
+const NEED_SERVER = 's12'; // Code.gs의 SERVER_VERSION과 같아야 함
 let warnedVersion = false;
 let busy = false;
 let turns = [];        // AI에게 보낼 최근 대화 (앱을 닫으면 사라짐)
@@ -237,7 +246,7 @@ const stars = r => {
 };
 
 function whenText(it) {
-  if (it.kind === '맛집') return it.place || '장소 없음';
+  if (it.kind === '맛집') return `${[it.category, it.food].filter(Boolean).join('/') || '분류 없음'} · ${it.place || '지역 없음'}`;
   if (it.kind === '맛집_후기') return stars(+it.rating) + (it.date ? ` · ${day(it.date)} 다녀옴` : '');
   if (it.kind === '할일') return it.date ? '마감 ' + day(it.date) : '날짜 없음';
   if (!it.date) return '날짜 없음 → 할 일로 저장돼요';
@@ -304,6 +313,8 @@ async function act(btn, busyText, fn) {
   setBusy(true);
   try {
     await fn();
+    // 맛집 수첩처럼 계속 쓰는 카드는 성공 후에도 다시 쓸 수 있게 (저장·삭제 카드는 fn 안에서 이미 잠김)
+    if (card && card.classList.contains('live')) ctrls.forEach(x => { x.disabled = false; });
   } catch (e) {
     btn.textContent = old;
     if (card && card.classList.contains('live')) ctrls.forEach(x => { x.disabled = false; });
@@ -335,9 +346,13 @@ async function send(text, fromInput) {
   const slow = setTimeout(() => { typing.textContent = '가나디가 열심히 찾고 있어요…'; }, 15000);
   setBusy(true);
   try {
-    const r = await call({ action: 'analyze', text, shared, history: prev });
+    // [저장한 맛집] 버튼은 AI 없이 바로 전체 목록
+    const r = !fromInput && text === '저장한 맛집'
+      ? await call({ action: 'places' })
+      : await call({ action: 'analyze', text, shared, history: prev });
     typing.remove();
-    if (r.answer) say(ko(r.answer));
+    if (r.places) placesCard(r.places, r.query || '');
+    else if (r.answer) say(ko(r.answer));
     else if (r.candidates) deleteCard(r.candidates);
     else if (r.edits) editCard(r.edits);
     else if (r.items && r.items.length) saveCard(r.items);
@@ -359,13 +374,14 @@ async function send(text, fromInput) {
 // ───── 저장 확인 카드 ─────
 function fieldsFor(kind) {
   if (kind === '할일') return ['kind', 'title', 'date', 'memo'];
-  if (kind === '맛집') return ['kind', 'title', 'place', 'memo'];
-  if (kind === '맛집_후기') return ['kind', 'title', 'rating', 'date', 'memo'];
+  if (kind === '맛집') return ['kind', 'title', 'category', 'food', 'place', 'memo'];
+  if (kind === '맛집_후기') return ['kind', 'title', 'rating', 'category', 'food', 'date', 'memo'];
   return ['kind', 'title', 'date', 'time', 'end', 'repeat', 'place', 'memo'];
 }
 function labelFor(k, kind) {
   if (k === 'date' && kind === '할일') return '마감일';
   if (k === 'date' && kind === '맛집_후기') return '다녀온 날';
+  if (k === 'place' && (kind === '맛집' || kind === '맛집_후기')) return '지역';
   return LABELS[k];
 }
 function control(k, it, changed) {
@@ -374,6 +390,7 @@ function control(k, it, changed) {
   if (k === 'kind') options(Object.entries(KINDS));
   else if (k === 'repeat') options([['', '없음'], ['매일', '매일'], ['매주', '매주'], ['매월', '매월']]);
   else if (k === 'rating') options([['', '없음'], ...[1, 2, 3, 4, 5].map(n => [String(n), '★'.repeat(n)])]);
+  else if (k === 'category') options([['', '분류 없음'], ...CATEGORIES.map(c => [c, c])]);
   else { c = el('input'); c.type = k === 'date' ? 'date' : k === 'time' || k === 'end' ? 'time' : 'text'; }
   c.value = it[k] || '';
   c[c.tagName === 'SELECT' ? 'onchange' : 'oninput'] = () => { it[k] = c.value; changed(k); };
@@ -534,6 +551,104 @@ function editCard(cands) {
     done: n => say(`${n}개 바꿨어요.`),
   });
   remember('[수정 후보] ' + cands.map((c, i) => `${i + 1}. ${ko(c.before)} → ${ko(c.after)}`).join(' / '));
+}
+
+// ───── 맛집 수첩 카드: 검색·분류 필터 + 줄마다 [지도] [수정] [지우기] (AI 없이 바로) ─────
+const PLACE_FIELDS = [['title', '가게 이름'], ['place', '지역'], ['category', '분류'], ['food', '음식'],
+  ['rating', '별점'], ['date', '다녀온 날'], ['memo', '메모']];
+
+function placesCard(list, query) {
+  if (!list.length) {
+    return say(query ? `'${query}'에 맞는 맛집을 찾지 못했어요.` : '맛집 수첩이 비어 있어요. 가게 이름을 말하면 저장해 둘게요.');
+  }
+  const head = el('div', 'card-title'), body = el('div');
+  const search = el('input', 'search');
+  search.type = 'search';
+  search.placeholder = '이름·지역·음식·메모로 찾기';
+  search.setAttribute('aria-label', '맛집 검색');
+  let cat = '';
+  const cats = ['전체', ...CATEGORIES.filter(c => list.some(p => p.category === c))];
+  if (list.some(p => !p.category)) cats.push('분류 없음');
+  const filters = row('filters', cats.map(c => {
+    const b = button('fchip', c);
+    b.setAttribute('aria-pressed', String(c === '전체'));
+    b.onclick = () => {
+      cat = c === '전체' ? '' : c;
+      filters.querySelectorAll('.fchip').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      render();
+    };
+    return b;
+  }));
+  const render = () => {
+    const q = search.value.trim().toLowerCase();
+    const shown = list.filter(p => (!cat || (cat === '분류 없음' ? !p.category : p.category === cat)) &&
+      (!q || [p.name, p.area, p.food, p.category, p.memo].join(' ').toLowerCase().includes(q)));
+    head.textContent = `🍽️ ${query ? `'${query}' 맛집` : '맛집 수첩'} ${shown.length}곳`;
+    body.replaceChildren(...(shown.length ? shown.map(p => placeView(p, list, render)) : [el('div', 'hint', '찾는 맛집이 없어요.')]));
+  };
+  search.oninput = render;
+  render();
+  add(row('card live', [head, search, ...(cats.length > 2 ? [filters] : []), body]));
+  remember(`[맛집 목록${query ? ` '${query}'` : ''}] ` + list.slice(0, 30).map(p => p.name).join(', '));
+}
+
+function placeView(p, list, rerender) {
+  const meta = [[p.category, p.food].filter(Boolean).join('/'), p.area, p.visited && p.visited + ' 다녀옴'].filter(Boolean).join(' · ');
+  const map = el('a', 'textbtn', '지도');
+  map.href = p.link || mapLink({ place: p.area, title: p.name });
+  map.target = '_blank';
+  map.rel = 'noopener';
+  const editBtn = button('textbtn', '수정'), delBtn = button('textbtn', '지우기');
+  const actions = row('row-btns', [map, editBtn, delBtn]);
+
+  // [수정]: 칸을 직접 고쳐 저장 (빈칸으로 두면 지워짐)
+  const draft = { title: p.name, place: p.area, category: p.category, food: p.food, rating: p.rating, date: p.visited, memo: p.memo };
+  const editor = el('div');
+  editor.hidden = true;
+  PLACE_FIELDS.forEach(([k, label]) => {
+    const id = 'f' + (++uid), lab = el('label', '', label);
+    lab.htmlFor = id;
+    const c = control(k, draft, () => {});
+    c.id = id;
+    editor.append(row('field', [lab, c]));
+  });
+  const saveBtn = button('btn primary', '저장하기'), closeBtn = button('btn secondary', '닫기');
+  editor.append(row('actions', [closeBtn, saveBtn]));
+  editBtn.onclick = () => { editor.hidden = !editor.hidden; if (!editor.hidden) editor.scrollIntoView({ block: 'nearest' }); };
+  closeBtn.onclick = () => { editor.hidden = true; };
+  saveBtn.onclick = () => {
+    if (!String(draft.title || '').trim()) return bubble('bot', '가게 이름을 넣어 주세요.');
+    act(saveBtn, '저장하는 중…', async () => {
+      const { count } = await call({ action: 'update', targets: [{ type: 'place', row: p.row, name: p.name, exact: true, changes: { ...draft } }] });
+      if (!count) throw new Error('이미 바뀌었거나 지워진 것 같아요. 맛집 목록을 다시 불러와 주세요.');
+      Object.assign(p, { name: draft.title.trim(), area: draft.place || '', category: draft.category || '', food: draft.food || '',
+        rating: draft.rating || '', visited: draft.date || '', memo: draft.memo || '', link: mapLink({ place: draft.place || '', title: draft.title.trim() }) });
+      bubble('note', `✏️ ${p.name} 고쳤어요.`);
+      rerender();
+    });
+  };
+
+  // [지우기]: 한 번 더 물어본 뒤 지움
+  delBtn.onclick = () => {
+    const no = button('btn secondary', '취소'), yes = button('btn danger', '지우기');
+    const confirmRow = row('', [el('div', 'hint', `${p.name}을(를) 지울까요?`), row('actions', [no, yes])]);
+    actions.replaceWith(confirmRow);
+    no.onclick = () => confirmRow.replaceWith(actions);
+    yes.onclick = () => act(yes, '지우는 중…', async () => {
+      const { count } = await call({ action: 'delete', targets: [{ type: 'place', row: p.row, name: p.name }] });
+      if (!count) throw new Error('이미 지워진 것 같아요. 맛집 목록을 다시 불러와 주세요.');
+      list.splice(list.indexOf(p), 1);
+      bubble('note', `🗑️ ${p.name} 지웠어요. 지운 내용은 구글 시트의 [기록] 탭에 남아 있어요.`);
+      rerender();
+    });
+  };
+
+  return row('item', [
+    row('prow', [el('div', 'title', p.name), el('div', 'when', p.rating ? stars(+p.rating) : '')]),
+    el('div', 'when', meta || '분류·지역 없음'),
+    ...(p.memo ? [el('div', 'pmemo', p.memo)] : []),
+    actions, editor,
+  ]);
 }
 
 // ───── 입력창 ─────

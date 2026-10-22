@@ -29,11 +29,14 @@
   #msg { margin-top: 12px; white-space: pre-line; }
   #msg a { display: block; margin-top: 8px; color: var(--accent); }
   #msg button { display: block; width: 100%; margin-top: 12px; }
+  button.danger { background: #b3261e; }
+  .card.del { display: flex; gap: 10px; align-items: center; }
+  .card.del input { width: auto; flex: none; transform: scale(1.3); }
   .hidden { display: none; }
 </style>
 </head>
 <body>
-<h1><span>☕ 내 비서 <small style="font-size:12px;color:var(--muted)">v3</small></span> <button class="sub" id="gear" aria-label="설정">⚙️</button></h1>
+<h1><span>☕ 내 비서 <small style="font-size:12px;color:var(--muted)">v4</small></span> <button class="sub" id="gear" aria-label="설정">⚙️</button></h1>
 
 <section id="setup" class="card hidden">
   <label>웹 앱 URL<input id="url" placeholder="https://script.google.com/macros/s/.../exec"></label>
@@ -41,7 +44,7 @@
   <div class="row"><button id="saveSetup">설정 저장</button></div>
 </section>
 
-<textarea id="text" placeholder="예) 28일 오후 2시 원두 발주창 열림&#10;예) 이번주 케이크 예약 뭐 있어?"></textarea>
+<textarea id="text" placeholder="예) 28일 오후 2시 원두 발주창 열림&#10;예) 이번주 케이크 예약 뭐 있어?&#10;예) 다음주 케이크 예약 다 지워줘"></textarea>
 <div class="row"><button id="analyze">보내기</button></div>
 
 <div id="items"></div>
@@ -49,12 +52,17 @@
   <button class="sub" id="cancel">취소</button>
   <button id="save">저장</button>
 </div>
+<div id="dels"></div>
+<div class="row hidden" id="delActions">
+  <button class="sub" id="delCancel">취소</button>
+  <button class="danger" id="delGo">🗑️ 체크한 일정 삭제</button>
+</div>
 <div id="msg" role="status"></div>
 
 <script>
 const KINDS = {
   카페_발주할일: '📦 발주할 일', 카페_발주창: '⏰ 발주창', 카페_케이크예약: '🎂 케이크 예약',
-  카페_기타: '☕ 카페 기타', 개인약속: '🙂 개인 약속', 할일: '✅ 할 일', 맛집: '🍽️ 맛집',
+  카페_기타: '☕ 카페 기타', 개인약속: '🙂 개인 약속', 할일: '✅ 할 일', 맛집: '🍽️ 맛집', 맛집_후기: '⭐ 맛집 후기',
 };
 const $ = id => document.getElementById(id);
 // 설정은 이 폰에만 저장 (GitHub에 공개되는 코드에 주소/비밀번호를 넣지 않기 위해)
@@ -90,6 +98,7 @@ function render() {
       <label>종류<select data-k="kind">${Object.entries(KINDS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>
       <label>제목<input data-k="title"></label>
       <div class="row"><label>날짜<input type="date" data-k="date"></label><label>시간<input type="time" data-k="time"></label></div>
+      <div class="row"><label>반복<select data-k="repeat"><option value="">없음</option><option>매일</option><option>매주</option><option>매월</option></select></label><label>별점<input type="number" min="1" max="5" data-k="rating"></label></div>
       <label>장소<input data-k="place"></label>
       <label>메모<input data-k="memo"></label>
       <div class="row"><button class="sub" data-del>이 항목 빼기</button></div>`;
@@ -112,8 +121,11 @@ $('analyze').onclick = async () => {
   try {
     const r = await call({ action: 'analyze', text });
     items = r.items || [];
+    dels = r.candidates || [];
     render();
+    renderDels();
     if (r.answer) say('💬 ' + r.answer);
+    else if (r.candidates) say(dels.length ? '🗑️ 지울 일정이 맞는지 확인해 주세요. 체크된 것만 지워져요' : '조건에 맞는 일정을 찾지 못했어요');
     else say(items.length ? '맞는지 확인하고 [저장]을 눌러 주세요' : '저장할 내용을 찾지 못했어요');
   } catch (e) {
     say('⚠️ ' + e.message);
@@ -152,6 +164,43 @@ $('save').onclick = async () => {
 };
 
 $('cancel').onclick = () => { items = []; render(); say(''); };
+
+// ───── 삭제: 후보 목록 → 체크된 것만 삭제 ─────
+let dels = [];
+
+function renderDels() {
+  $('dels').replaceChildren(...dels.map(d => {
+    d.on = true;
+    const l = document.createElement('label');
+    l.className = 'card del';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = true;
+    cb.onchange = () => { d.on = cb.checked; };
+    l.append(cb, d.label);
+    return l;
+  }));
+  $('delActions').classList.toggle('hidden', !dels.length);
+}
+
+$('delGo').onclick = async () => {
+  const targets = dels.filter(d => d.on);
+  if (!targets.length) return say('체크된 일정이 없어요');
+  say('🗑️ 지우는 중...');
+  $('delGo').disabled = true;
+  try {
+    const { count } = await call({ action: 'delete', targets });
+    say(`🗑️ ${count}개 지웠어요.\n실수였다면 구글캘린더 ⚙️ → 휴지통에서 30일 안에 복구할 수 있어요.`);
+    dels = [];
+    renderDels();
+    $('text').value = '';
+  } catch (e) {
+    say('⚠️ ' + e.message);
+  }
+  $('delGo').disabled = false;
+};
+
+$('delCancel').onclick = () => { dels = []; renderDels(); say(''); };
 
 $('url').value = store.get('url');
 $('secret').value = store.get('secret');

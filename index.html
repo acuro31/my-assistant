@@ -73,16 +73,17 @@
   .kind { font-size: 13px; color: var(--sub); }
   .title { font-size: 17px; font-weight: 700; margin-top: 2px; }
   .when { font-size: 15px; color: var(--sub); margin-top: 4px; }
-  .row-btns { display: flex; gap: 4px; margin: 4px 0 0 -12px; }
+  .row-btns { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 0 -12px; }
   .textbtn {
     min-height: 44px; padding: 0 12px; border: 0; background: none;
     color: var(--accent-text); font-size: 15px; font-weight: 600;
   }
   .textbtn:disabled { color: var(--label); }
   .field label { display: block; font-size: 13px; color: var(--sub); margin: 10px 0 4px; }
-  .field input, .field select {
+  .field input, .field select, .field textarea {
     width: 100%; min-height: 48px; padding: 0 14px; border: 0; border-radius: 12px; background: var(--bg);
   }
+  .field textarea { padding: 12px 14px; resize: vertical; }
   .check { display: flex; gap: 12px; align-items: flex-start; padding: 14px 0; border-top: 1px solid var(--line); line-height: 1.45; }
   .check:first-of-type { border-top: 0; }
   .check input { width: 22px; height: 22px; margin: 1px 0 0; flex: none; accent-color: var(--primary); }
@@ -141,7 +142,7 @@
 </head>
 <body>
 <header>
-  <h1>가나디 비서<small>v14</small></h1>
+  <h1>가나디 비서<small>v17</small></h1>
   <button id="gear" class="icon" aria-label="설정">⚙️</button>
 </header>
 
@@ -190,7 +191,7 @@
 <script>
 const KINDS = {
   카페_발주할일: '📦 발주할 일', 카페_발주창: '⏰ 발주창', 카페_케이크예약: '🎂 케이크 예약',
-  카페_기타: '☕ 카페 기타', 개인약속: '🙂 개인 약속', 할일: '✅ 할 일', 맛집: '🍽️ 맛집', 맛집_후기: '⭐ 맛집 후기',
+  카페_기타: '☕ 카페 기타', 개인약속: '🙂 개인 약속', 할일: '✅ 할 일', 맛집: '🍽️ 맛집', 맛집_후기: '⭐ 맛집 후기', 일기: '📔 일기',
 };
 const LABELS = { kind: '종류', title: '제목', date: '날짜', time: '시간', end: '끝 시간', repeat: '반복', place: '장소', memo: '메모', rating: '별점', category: '분류', food: '음식' };
 // 맛집 분류 (Code.gs의 CATEGORIES와 같아야 함)
@@ -204,7 +205,7 @@ const store = {
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
 };
 
-const NEED_SERVER = 's13'; // Code.gs의 SERVER_VERSION과 같아야 함
+const NEED_SERVER = 's14'; // Code.gs의 SERVER_VERSION과 같아야 함
 let warnedVersion = false;
 let busy = false;
 let turns = [];        // AI에게 보낼 최근 대화 (앱을 닫으면 사라짐)
@@ -248,6 +249,7 @@ const stars = r => {
 function whenText(it) {
   if (it.kind === '맛집') return `${[it.category, it.food].filter(Boolean).join('/') || '분류 없음'} · ${it.place || '지역 없음'}`;
   if (it.kind === '맛집_후기') return stars(+it.rating) + (it.date ? ` · ${day(it.date)} 다녀옴` : '');
+  if (it.kind === '일기') return `${it.date ? day(it.date) : '오늘'} · 일기장`;
   // 할 일은 마감 날짜만 저장됨. 시간이 있으면 서버가 개인 일정으로 저장(알림 울림) → 아래 일정 표시로
   if (it.kind === '할일' && !it.time) return it.date ? '마감 ' + day(it.date) : '날짜 없음';
   if (!it.date) return '날짜 없음 → 할 일로 저장돼요';
@@ -263,6 +265,8 @@ const nowHM = () => { const d = new Date(); return `${pad2(d.getHours())}:${pad2
 const summary = it => `${KINDS[it.kind] || it.kind} ${it.title || '(제목 없음)'} · ${whenText(it)}`;
 // Code.gs의 mapLink와 같은 식 — 바꾸면 둘 다 바꾸기
 const mapLink = it => 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent((it.place + ' ' + it.title).trim());
+// 네이버지도는 앱에 바로 넣는 API가 없어서 검색 화면을 열어 줌 (거기서 직접 저장)
+const naverLink = it => 'https://map.naver.com/p/search/' + encodeURIComponent((it.place + ' ' + it.title).trim());
 
 // ───── 서버 통신 ─────
 // 헤더 없이 보내야 브라우저가 사전 확인(CORS preflight)을 하지 않아 Apps Script와 통신됨
@@ -368,7 +372,9 @@ async function send(text, fromInput) {
   text = text.trim();
   if (!text || busy) return;
   // 이스터에그: 주인 이름만 부르면 인사 (이름이 들어간 일정 문장은 평소처럼 처리)
-  if (/^임?관호\s*(야|아|님|씨)?\s*[!~.?ㅎㅋ]*$/.test(text)) {
+  // 키보드·음성 입력이 넣는 보이지 않는 글자와 풀어 쓴 한글(ㄱ+ㅘ+ㄴ)을 먼저 정리
+  const bare = text.normalize('NFC').replace(/[​-‍﻿]/g, '');
+  if (/^임?관호\s*(야|아|님|씨)?[\s,]*(안녕|하이)?[\s!~.?ㅎㅋ\p{Extended_Pictographic}️]*$/u.test(bare)) {
     lockOld();
     bubble('me', text);
     if (fromInput) { input.value = ''; clearShared(); autosize(); }
@@ -423,7 +429,7 @@ async function send(text, fromInput) {
 
 // ───── 저장 확인 카드 ─────
 function fieldsFor(kind) {
-  if (kind === '할일') return ['kind', 'title', 'date', 'memo'];
+  if (kind === '할일' || kind === '일기') return ['kind', 'title', 'date', 'memo'];
   if (kind === '맛집') return ['kind', 'title', 'category', 'food', 'place', 'memo'];
   if (kind === '맛집_후기') return ['kind', 'title', 'rating', 'category', 'food', 'date', 'memo'];
   return ['kind', 'title', 'date', 'time', 'end', 'repeat', 'place', 'memo'];
@@ -431,6 +437,7 @@ function fieldsFor(kind) {
 function labelFor(k, kind) {
   if (k === 'date' && kind === '할일') return '마감일';
   if (k === 'date' && kind === '맛집_후기') return '다녀온 날';
+  if (k === 'memo' && kind === '일기') return '내용';
   if (k === 'place' && (kind === '맛집' || kind === '맛집_후기')) return '지역';
   return LABELS[k];
 }
@@ -441,6 +448,7 @@ function control(k, it, changed) {
   else if (k === 'repeat') options([['', '없음'], ['매일', '매일'], ['매주', '매주'], ['매월', '매월']]);
   else if (k === 'rating') options([['', '없음'], ...[1, 2, 3, 4, 5].map(n => [String(n), '★'.repeat(n)])]);
   else if (k === 'category') options([['', '분류 없음'], ...CATEGORIES.map(c => [c, c])]);
+  else if (k === 'memo' && it.kind === '일기') { c = el('textarea'); c.rows = 5; }
   else { c = el('input'); c.type = k === 'date' ? 'date' : k === 'time' || k === 'end' ? 'time' : 'text'; }
   c.value = it[k] || '';
   c[c.tagName === 'SELECT' ? 'onchange' : 'oninput'] = () => { it[k] = c.value; changed(k); };
@@ -517,11 +525,13 @@ function savedMessage(items, ids) {
   const b = bubble('bot live', '');
   b.append(el('div', '', '저장했어요 ✅'), ...items.map(it => el('div', 'saved-line', '· ' + summary(it))));
   items.filter(it => it.kind === '맛집').forEach(it => {
-    const a = el('a', 'maplink', `📍 지도에서 ${it.title} 저장하기`);
-    a.href = mapLink(it);
-    a.target = '_blank';
-    a.rel = 'noopener';
-    b.append(a);
+    [['구글', mapLink], ['네이버', naverLink]].forEach(([name, link]) => {
+      const a = el('a', 'maplink', `📍 ${name}지도에서 ${it.title} 저장하기`);
+      a.href = link(it);
+      a.target = '_blank';
+      a.rel = 'noopener';
+      b.append(a);
+    });
   });
   const undoBtn = button('textbtn', '되돌리기');
   undoBtn.style.marginLeft = '-12px';
@@ -677,13 +687,17 @@ function placesCard(list, query) {
 
 function placeView(p, list, rerender) {
   const meta = [[p.category, p.food].filter(Boolean).join('/'), p.area, p.visited && p.visited + ' 다녀옴'].filter(Boolean).join(' · ');
-  const map = el('a', 'textbtn', '지도');
+  const map = el('a', 'textbtn', '구글');
   map.href = p.link || mapLink({ place: p.area, title: p.name });
   map.target = '_blank';
   map.rel = 'noopener';
+  const naver = el('a', 'textbtn', '네이버');
+  naver.href = naverLink({ place: p.area, title: p.name });
+  naver.target = '_blank';
+  naver.rel = 'noopener';
   const editBtn = button('textbtn', '수정'), delBtn = button('textbtn', '지우기');
   const visitBtn = button('textbtn', '다녀옴');
-  const actions = row('row-btns', [map, ...(p.visited ? [] : [visitBtn]), editBtn, delBtn]);
+  const actions = row('row-btns', [map, naver, ...(p.visited ? [] : [visitBtn]), editBtn, delBtn]);
 
   // [수정]: 칸을 직접 고쳐 저장 (빈칸으로 두면 지워짐)
   const draft = { title: p.name, place: p.area, category: p.category, food: p.food, rating: p.rating, date: p.visited, memo: p.memo };

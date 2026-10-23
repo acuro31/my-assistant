@@ -143,7 +143,7 @@
 </head>
 <body>
 <header>
-  <h1>가나디 비서<small>v21</small></h1>
+  <h1>가나디 비서<small>v22</small></h1>
   <button id="gear" class="icon" aria-label="설정">⚙️</button>
 </header>
 
@@ -208,7 +208,7 @@ const store = {
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
 };
 
-const NEED_SERVER = 's18'; // Code.gs의 SERVER_VERSION과 같아야 함
+const NEED_SERVER = 's19'; // Code.gs의 SERVER_VERSION과 같아야 함
 let warnedVersion = false;
 let busy = false;
 let turns = [];        // AI에게 보낼 최근 대화 (앱을 닫으면 사라짐)
@@ -766,7 +766,6 @@ function placeView(p, list, rerender) {
 // ───── 일기 목록 카드: 최신 순 20개씩 + 검색(낱말·"10월 24일") + 줄마다 [이전 보기] [수정] [지우기] (AI 없이 바로) ─────
 const DIARY_PAGE = 20;
 const atText = at => (/^\d{4}-\d{2}-\d{2} /.test(at) ? at.slice(5, 10).replace('-', '/') + at.slice(10) : at); // "10/24 14:03"
-const nowAt = () => `${todayStr()} ${nowHM()}`;
 
 function diariesCard(list) {
   if (!list.length) return say('아직 쓴 일기가 없어요. [📔 일기 쓰기]를 누르고 써 보세요.');
@@ -780,7 +779,7 @@ function diariesCard(list) {
   // 검색 대상: 최신 글 + 날짜("2026-10-24 10월 24일 10/24")
   const hay = d => {
     const [, m, dd] = (d.date.match(/^\d{4}-(\d{2})-(\d{2})$/) || []).map(Number);
-    return (d.versions[d.versions.length - 1].text + ' ' + d.date + (m ? ` ${m}월 ${dd}일 ${m}/${dd}` : '')).toLowerCase();
+    return (d.text + ' ' + d.date + (m ? ` ${m}월 ${dd}일 ${m}/${dd}` : '')).toLowerCase();
   };
   const render = () => {
     const words = search.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -799,26 +798,36 @@ function diariesCard(list) {
 }
 
 function diaryView(d, list, rerender) {
-  const latest = () => d.versions[d.versions.length - 1];
   const editBtn = button('textbtn', '수정'), delBtn = button('textbtn', '지우기');
   const oldBtn = button('textbtn', '이전 보기');
-  const actions = row('row-btns', [...(d.versions.length > 1 ? [oldBtn] : []), editBtn, delBtn]);
+  const actions = row('row-btns', [...(d.n > 1 ? [oldBtn] : []), editBtn, delBtn]);
 
   // 본문: 120자 넘으면 앞부분만, [전체 보기]로 펼침
-  const text = latest().text;
+  const text = d.text;
   const memo = el('div', 'pmemo', text.length > 120 ? text.slice(0, 120) + '…' : text);
   const full = button('textbtn', '전체 보기');
   full.hidden = text.length <= 120;
   full.onclick = () => { memo.textContent = text; full.hidden = true; };
 
-  // [이전 보기]: 옛 판을 최신부터, 쓴 시각과 함께
+  // [이전 보기]: 옛 판을 처음 누를 때 서버에서 받아(d.olds에 둠) 최신부터, 쓴 시각과 함께
   const olds = el('div');
   olds.hidden = true;
-  oldBtn.onclick = () => {
-    olds.hidden = !olds.hidden;
-    oldBtn.textContent = olds.hidden ? '이전 보기' : '이전 접기';
-    olds.replaceChildren(...d.versions.slice(0, -1).reverse().flatMap(v =>
+  const showOlds = () => {
+    olds.replaceChildren(...d.olds.slice().reverse().flatMap(v =>
       [el('div', 'hint', `${atText(v.at)}에 쓴 글`), el('div', 'pmemo old', v.text)]));
+    olds.hidden = false;
+    oldBtn.textContent = '이전 접기';
+  };
+  oldBtn.onclick = () => {
+    if (!olds.hidden) { olds.hidden = true; oldBtn.textContent = '이전 보기'; return; }
+    if (d.olds) return showOlds();
+    act(oldBtn, '불러오는 중…', async () => {
+      const r = await call({ action: 'diaryOld', row: d.row, key: d.key });
+      if (!r.olds) throw new Error('이미 바뀌었거나 지워진 것 같아요. 일기 목록을 다시 불러와 주세요.');
+      if (!list.includes(d)) return; // 받는 사이 지운 일기
+      d.olds = r.olds;
+      showOlds();
+    });
   };
 
   // [수정]: 날짜·내용만. 예전 글은 서버가 시트 오른쪽 칸에 그대로 남김
@@ -842,7 +851,7 @@ function diaryView(d, list, rerender) {
     act(saveBtn, '저장하는 중…', async () => {
       const { count } = await call({ action: 'update', targets: [{ type: 'diary', row: d.row, key: d.key, changes: { date: draft.date, memo: memoText } }] });
       if (!count) throw new Error('이미 바뀌었거나 지워진 것 같아요. 일기 목록을 다시 불러와 주세요.');
-      if (memoText !== latest().text) d.versions.push({ text: memoText, at: nowAt() });
+      if (memoText !== d.text) Object.assign(d, { text: memoText, n: d.n + 1, olds: null }); // 옛 판은 다음 [이전 보기] 때 새로 받음
       if (draft.date) d.date = draft.date;
       list.sort((a, b) => b.date.localeCompare(a.date) || b.row - a.row);
       bubble('note', `✏️ ${day(d.date)} 일기를 고쳤어요. 예전 글도 시트에 그대로 남아 있어요.`);
@@ -874,7 +883,7 @@ function diaryView(d, list, rerender) {
   };
 
   return row('item', [
-    row('prow', [el('div', 'title', day(d.date)), el('div', 'when', d.versions.length > 1 ? `수정 ${d.versions.length - 1}번` : '')]),
+    row('prow', [el('div', 'title', day(d.date)), el('div', 'when', d.n > 1 ? `수정 ${d.n - 1}번` : '')]),
     memo, full, actions, olds, editor,
   ]);
 }

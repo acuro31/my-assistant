@@ -136,13 +136,14 @@
   .fchip { flex: none; min-height: 36px; padding: 0 12px; border: 0; border-radius: 18px; background: var(--bg); font-size: 14px; }
   .fchip[aria-pressed="true"] { background: var(--primary); color: #fff; font-weight: 600; }
   .prow { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-  .pmemo { font-size: 15px; margin-top: 4px; }
+  .pmemo { font-size: 15px; margin-top: 4px; white-space: pre-wrap; }
+  .pmemo.old { color: var(--sub); margin-bottom: 8px; }
   a.textbtn { display: inline-flex; align-items: center; text-decoration: none; }
 </style>
 </head>
 <body>
 <header>
-  <h1>가나디 비서<small>v17</small></h1>
+  <h1>가나디 비서<small>v20</small></h1>
   <button id="gear" class="icon" aria-label="설정">⚙️</button>
 </header>
 
@@ -159,6 +160,8 @@
 
 <footer>
   <div id="chips">
+    <button class="chip" data-prefix="일기: ">📔 일기 쓰기</button>
+    <button class="chip">📔 일기 목록</button>
     <button class="chip">오늘 일정</button>
     <button class="chip">내일 일정</button>
     <button class="chip">이번주 일정</button>
@@ -205,7 +208,7 @@ const store = {
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
 };
 
-const NEED_SERVER = 's14'; // Code.gs의 SERVER_VERSION과 같아야 함
+const NEED_SERVER = 's17'; // Code.gs의 SERVER_VERSION과 같아야 함
 let warnedVersion = false;
 let busy = false;
 let turns = [];        // AI에게 보낼 최근 대화 (앱을 닫으면 사라짐)
@@ -304,7 +307,7 @@ function setBusy(b) {
 function lockOld() {
   document.querySelectorAll('.live:not(.keep)').forEach(c => {
     c.classList.remove('live');
-    c.querySelectorAll('button, input, select').forEach(x => { x.disabled = true; });
+    c.querySelectorAll('button, input, select, textarea').forEach(x => { x.disabled = true; });
   });
 }
 
@@ -312,7 +315,7 @@ function lockOld() {
 async function act(btn, busyText, fn) {
   if (busy) return;
   const card = btn.closest('.live');
-  const ctrls = card ? [...card.querySelectorAll('button, input, select')].filter(x => !x.disabled) : [];
+  const ctrls = card ? [...card.querySelectorAll('button, input, select, textarea')].filter(x => !x.disabled) : [];
   ctrls.forEach(x => { x.disabled = true; });
   const old = btn.textContent;
   btn.textContent = busyText;
@@ -364,6 +367,7 @@ const QUICK_ACTIONS = {
   '이번주 일정': { action: 'events', days: '이번주' },
   '할 일 목록': { action: 'tasks' },
   '저장한 맛집': { action: 'places' },
+  '📔 일기 목록': { action: 'diaries' },
 };
 
 // ───── 보내기 ─────
@@ -407,6 +411,7 @@ async function send(text, fromInput) {
     if (r.events) eventsCard(r.events, text);
     else if (r.tasks) tasksCard(r.tasks);
     else if (r.places) placesCard(r.places, r.query || '');
+    else if (r.diaries) diariesCard(r.diaries);
     else if (r.answer) say(ko(r.answer));
     else if (r.candidates) deleteCard(r.candidates);
     else if (r.edits) editCard(r.edits);
@@ -758,6 +763,122 @@ function placeView(p, list, rerender) {
   ]);
 }
 
+// ───── 일기 목록 카드: 최신 순 20개씩 + 검색(낱말·"10월 24일") + 줄마다 [이전 보기] [수정] [지우기] (AI 없이 바로) ─────
+const DIARY_PAGE = 20;
+const atText = at => (/^\d{4}-\d{2}-\d{2} /.test(at) ? at.slice(5, 10).replace('-', '/') + at.slice(10) : at); // "10/24 14:03"
+const nowAt = () => `${todayStr()} ${nowHM()}`;
+
+function diariesCard(list) {
+  if (!list.length) return say('아직 쓴 일기가 없어요. [📔 일기 쓰기]를 누르고 써 보세요.');
+  const head = el('div', 'card-title'), body = el('div');
+  const search = el('input', 'search');
+  search.type = 'search';
+  search.placeholder = '낱말이나 "10월 24일"로 찾기';
+  search.setAttribute('aria-label', '일기 검색');
+  const more = button('btn secondary', '더 보기');
+  let limit = DIARY_PAGE;
+  // 검색 대상: 최신 글 + 날짜("2026-10-24 10월 24일 10/24")
+  const hay = d => {
+    const [, m, dd] = (d.date.match(/^\d{4}-(\d{2})-(\d{2})$/) || []).map(Number);
+    return (d.versions[d.versions.length - 1].text + ' ' + d.date + (m ? ` ${m}월 ${dd}일 ${m}/${dd}` : '')).toLowerCase();
+  };
+  const render = () => {
+    const words = search.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const found = list.filter(d => words.every(w => hay(d).includes(w)));
+    const shown = found.slice(0, limit);
+    head.textContent = `📔 ${words.length ? `'${search.value.trim()}' 일기` : '일기'} ${found.length}개`;
+    body.replaceChildren(...(shown.length ? shown.map(d => diaryView(d, list, render)) : [el('div', 'hint', '찾는 일기가 없어요.')]));
+    more.hidden = found.length <= limit;
+    more.textContent = `더 보기 (${found.length - shown.length}개 남음)`;
+  };
+  search.oninput = () => { limit = DIARY_PAGE; render(); };
+  more.onclick = () => { limit += DIARY_PAGE; render(); };
+  render();
+  add(row('card live keep', [head, search, body, more]));
+  remember(`[일기 목록] ${list.length}개`); // 일기 글은 AI 대화 맥락으로 넘기지 않음
+}
+
+function diaryView(d, list, rerender) {
+  const latest = () => d.versions[d.versions.length - 1];
+  const editBtn = button('textbtn', '수정'), delBtn = button('textbtn', '지우기');
+  const oldBtn = button('textbtn', '이전 보기');
+  const actions = row('row-btns', [...(d.versions.length > 1 ? [oldBtn] : []), editBtn, delBtn]);
+
+  // 본문: 120자 넘으면 앞부분만, [전체 보기]로 펼침
+  const text = latest().text;
+  const memo = el('div', 'pmemo', text.length > 120 ? text.slice(0, 120) + '…' : text);
+  const full = button('textbtn', '전체 보기');
+  full.hidden = text.length <= 120;
+  full.onclick = () => { memo.textContent = text; full.hidden = true; };
+
+  // [이전 보기]: 옛 판을 최신부터, 쓴 시각과 함께
+  const olds = el('div');
+  olds.hidden = true;
+  oldBtn.onclick = () => {
+    olds.hidden = !olds.hidden;
+    oldBtn.textContent = olds.hidden ? '이전 보기' : '이전 접기';
+    olds.replaceChildren(...d.versions.slice(0, -1).reverse().flatMap(v =>
+      [el('div', 'hint', `${atText(v.at)}에 쓴 글`), el('div', 'pmemo old', v.text)]));
+  };
+
+  // [수정]: 날짜·내용만. 예전 글은 서버가 시트 오른쪽 칸에 그대로 남김
+  const draft = { kind: '일기', date: d.date, memo: text };
+  const editor = el('div');
+  editor.hidden = true;
+  [['date', '날짜'], ['memo', '내용']].forEach(([k, label]) => {
+    const id = 'f' + (++uid), lab = el('label', '', label);
+    lab.htmlFor = id;
+    const c = control(k, draft, () => {});
+    c.id = id;
+    editor.append(row('field', [lab, c]));
+  });
+  const saveBtn = button('btn primary', '저장하기'), closeBtn = button('btn secondary', '닫기');
+  editor.append(row('actions', [closeBtn, saveBtn]));
+  editBtn.onclick = () => { editor.hidden = !editor.hidden; if (!editor.hidden) editor.scrollIntoView({ block: 'nearest' }); };
+  closeBtn.onclick = () => { editor.hidden = true; };
+  saveBtn.onclick = () => {
+    const memoText = String(draft.memo || '').trim();
+    if (!memoText) return bubble('bot', '내용을 넣어 주세요. 일기를 없애려면 [지우기]를 눌러 주세요.');
+    act(saveBtn, '저장하는 중…', async () => {
+      const { count } = await call({ action: 'update', targets: [{ type: 'diary', row: d.row, key: d.key, changes: { date: draft.date, memo: memoText } }] });
+      if (!count) throw new Error('이미 바뀌었거나 지워진 것 같아요. 일기 목록을 다시 불러와 주세요.');
+      if (memoText !== latest().text) d.versions.push({ text: memoText, at: nowAt() });
+      if (draft.date) d.date = draft.date;
+      list.sort((a, b) => b.date.localeCompare(a.date) || b.row - a.row);
+      bubble('note', `✏️ ${day(d.date)} 일기를 고쳤어요. 예전 글도 시트에 그대로 남아 있어요.`);
+      rerender();
+    });
+  };
+
+  // [지우기]: 두 번 물어봄. 두 번째 버튼은 잠깐 뒤에 켜져서 빠르게 두 번 톡톡 눌러도 바로 지워지지 않음
+  delBtn.onclick = () => {
+    const no = button('btn secondary', '취소'), yes = button('btn danger', '지우기');
+    const ask1 = row('', [el('div', 'hint', `${day(d.date)} 일기를 지울까요?`), row('actions', [no, yes])]);
+    actions.replaceWith(ask1);
+    no.onclick = () => ask1.replaceWith(actions);
+    yes.onclick = () => {
+      const no2 = button('btn secondary', '취소'), yes2 = button('btn danger', '네, 지울게요');
+      yes2.disabled = true;
+      setTimeout(() => { if (ask2.isConnected && !busy) yes2.disabled = false; }, 800);
+      const ask2 = row('', [el('div', 'hint', '정말 지울까요? 고친 글까지 모두 지워져요.'), row('actions', [no2, yes2])]);
+      ask1.replaceWith(ask2);
+      no2.onclick = () => ask2.replaceWith(actions);
+      yes2.onclick = () => act(yes2, '지우는 중…', async () => {
+        const { count } = await call({ action: 'delete', targets: [{ type: 'diary', row: d.row, key: d.key }] });
+        if (!count) throw new Error('이미 지워졌을 수도 있어요. 일기 목록을 다시 불러오고, 시트의 [지운 일기] 탭도 확인해 주세요.');
+        list.splice(list.indexOf(d), 1);
+        bubble('note', '🗑️ 지웠어요. 지운 일기는 구글 시트의 [지운 일기] 탭에 고친 글까지 그대로 남아 있어요.');
+        rerender();
+      });
+    };
+  };
+
+  return row('item', [
+    row('prow', [el('div', 'title', day(d.date)), el('div', 'when', d.versions.length > 1 ? `수정 ${d.versions.length - 1}번` : '')]),
+    memo, full, actions, olds, editor,
+  ]);
+}
+
 // ───── 입력창 ─────
 function autosize() {
   input.style.height = 'auto';
@@ -768,7 +889,11 @@ input.oninput = () => { autosize(); if (!input.value.trim()) clearShared(); };
 input.onkeydown = e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send(input.value, true); }; // 폰에서 Enter는 줄바꿈
 $('send').onclick = () => send(input.value, true);
 $('send').onmousedown = e => e.preventDefault(); // 보내기를 눌러도 입력창 포커스(키보드)가 유지되게
-document.querySelectorAll('.chip').forEach(c => { c.onclick = () => send(c.textContent, false); });
+document.querySelectorAll('.chip:not([data-prefix])').forEach(c => { c.onclick = () => send(c.textContent, false); });
+// [📔 일기 쓰기]: 바로 보내지 않고 입력창 앞에 "일기: "를 붙여 둠 (두 번 눌러도 한 번만)
+document.querySelectorAll('.chip[data-prefix]').forEach(c => {
+  c.onclick = () => { input.value = c.dataset.prefix + input.value.replace(/^\s*일기\s*[:：]\s*/, ''); input.focus(); autosize(); };
+});
 document.querySelectorAll('.example').forEach(c => {
   c.onclick = () => { input.value = c.textContent; clearShared(); autosize(); input.focus(); };
 });
@@ -838,7 +963,7 @@ if (shared) {
 
 // 아이콘 꾹 누르기 메뉴·빅스비 루틴: ?focus=1 → 바로 입력, ?ask=오늘 일정 → 바로 물어봄
 // 남이 만든 링크로 아무 말이나 보내지 못하게 빠른 버튼 문구만 허용
-const QUICK = [...document.querySelectorAll('.chip')].map(c => c.textContent);
+const QUICK = [...document.querySelectorAll('.chip:not([data-prefix])')].map(c => c.textContent);
 const ask = p.get('ask');
 if (ask && QUICK.includes(ask) && store.get('url')) send(ask, false);
 else if (p.get('focus')) input.focus();

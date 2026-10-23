@@ -143,7 +143,7 @@
 </head>
 <body>
 <header>
-  <h1>가나디 비서<small>v20</small></h1>
+  <h1>가나디 비서<small>v21</small></h1>
   <button id="gear" class="icon" aria-label="설정">⚙️</button>
 </header>
 
@@ -208,7 +208,7 @@ const store = {
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
 };
 
-const NEED_SERVER = 's17'; // Code.gs의 SERVER_VERSION과 같아야 함
+const NEED_SERVER = 's18'; // Code.gs의 SERVER_VERSION과 같아야 함
 let warnedVersion = false;
 let busy = false;
 let turns = [];        // AI에게 보낼 최근 대화 (앱을 닫으면 사라짐)

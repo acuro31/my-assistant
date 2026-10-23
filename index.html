@@ -141,7 +141,7 @@
 </head>
 <body>
 <header>
-  <h1>가나디 비서<small>v13</small></h1>
+  <h1>가나디 비서<small>v14</small></h1>
   <button id="gear" class="icon" aria-label="설정">⚙️</button>
 </header>
 
@@ -177,8 +177,8 @@
   <div class="sheet-body" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
     <h2 id="setupTitle">설정</h2>
     <p id="setupDesc" class="sub">연결할 웹 앱 주소와 비밀번호를 넣어 주세요. 이 폰에만 저장돼요.</p>
-    <div class="field"><label for="url">웹 앱 주소</label><input id="url" inputmode="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec"></div>
-    <div class="field"><label for="secret">비밀번호</label><input id="secret" type="password" autocomplete="off"></div>
+    <div class="field"><label for="url">웹 앱 주소</label><input id="url" inputmode="url" autocomplete="username" placeholder="https://script.google.com/macros/s/…/exec"></div>
+    <div class="field"><label for="secret">비밀번호</label><input id="secret" type="password" autocomplete="current-password"></div>
     <p id="setupErr" class="err" hidden></p>
     <div class="actions">
       <button id="setupClose" class="btn secondary">닫기</button>
@@ -204,7 +204,7 @@ const store = {
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
 };
 
-const NEED_SERVER = 's12'; // Code.gs의 SERVER_VERSION과 같아야 함
+const NEED_SERVER = 's13'; // Code.gs의 SERVER_VERSION과 같아야 함
 let warnedVersion = false;
 let busy = false;
 let turns = [];        // AI에게 보낼 최근 대화 (앱을 닫으면 사라짐)
@@ -248,7 +248,8 @@ const stars = r => {
 function whenText(it) {
   if (it.kind === '맛집') return `${[it.category, it.food].filter(Boolean).join('/') || '분류 없음'} · ${it.place || '지역 없음'}`;
   if (it.kind === '맛집_후기') return stars(+it.rating) + (it.date ? ` · ${day(it.date)} 다녀옴` : '');
-  if (it.kind === '할일') return it.date ? '마감 ' + day(it.date) : '날짜 없음';
+  // 할 일은 마감 날짜만 저장됨. 시간이 있으면 서버가 개인 일정으로 저장(알림 울림) → 아래 일정 표시로
+  if (it.kind === '할일' && !it.time) return it.date ? '마감 ' + day(it.date) : '날짜 없음';
   if (!it.date) return '날짜 없음 → 할 일로 저장돼요';
   let time = it.time || (it.kind === '카페_발주할일' ? '10:00' : '');
   // 서버와 같은 규칙: 오늘 발주인데 10시가 지났으면 하루 종일 일정으로 저장됨
@@ -295,8 +296,9 @@ function setBusy(b) {
 }
 
 // 새 메시지를 보내면 예전 카드의 버튼을 모두 잠금 (오래된 [되돌리기]가 엉뚱한 걸 지우지 않게)
+// .keep(맛집 수첩)은 줄마다 서버가 가게 이름으로 다시 확인하므로 잠그지 않고 계속 쓸 수 있게 둠
 function lockOld() {
-  document.querySelectorAll('.live').forEach(c => {
+  document.querySelectorAll('.live:not(.keep)').forEach(c => {
     c.classList.remove('live');
     c.querySelectorAll('button, input, select').forEach(x => { x.disabled = true; });
   });
@@ -323,11 +325,57 @@ async function act(btn, busyText, fn) {
   setBusy(false);
 }
 
+// ───── 짧은 대답은 앱이 바로 처리 ─────
+// 카드가 떠 있을 때 "응/취소/되돌려"는 AI에게 보내지 않고 그 카드의 버튼을 대신 눌러 줌
+// (보내면 새 메시지라서 카드가 먼저 잠겨, "버튼을 눌러 주세요"라는 안내가 소용없어짐)
+const YES = /^(응|ㅇㅇ|어|그래|좋아|네|넹|오케이|ok|저장해|저장해줘|저장|지워|지워줘|바꿔|바꿔줘|응 (저장해|지워|지워줘|바꿔줘))[!.~ ]*$/i;
+const NO = /^(취소|아니|아니야|됐어|그만|안 해)[!.~ ]*$/;
+const UNDO = /^(되돌려|되돌려줘|취소해줘|취소|방금 (거|것) (지워|지워줘|취소해줘))[!.~ ]*$/;
+
+function quickReply(text, fromInput) {
+  const press = (b, what) => {
+    if (!b || b.disabled || busy) return false;
+    bubble('me', text);
+    if (fromInput) { input.value = ''; clearShared(); autosize(); }
+    bubble('note', what);
+    b.click();
+    return true;
+  };
+  const card = [...document.querySelectorAll('.card.live:not(.keep)')].pop();
+  if (card) {
+    const [cancel, go] = card.querySelectorAll('.actions > .btn');
+    if (YES.test(text)) return press(go, `👉 [${go && go.textContent}]을 눌렀어요.`);
+    if (NO.test(text)) return press(cancel, '👉 [취소]를 눌렀어요.');
+    return false;
+  }
+  const undoBtn = [...document.querySelectorAll('.msg.live .textbtn')].filter(b => b.textContent === '되돌리기').pop();
+  if (undoBtn && UNDO.test(text)) return press(undoBtn, '👉 [되돌리기]를 눌렀어요.');
+  return false;
+}
+
+// 빠른 버튼 → AI 없이 바로 부르는 서버 동작
+const QUICK_ACTIONS = {
+  '오늘 일정': { action: 'events', days: '오늘' },
+  '내일 일정': { action: 'events', days: '내일' },
+  '이번주 일정': { action: 'events', days: '이번주' },
+  '할 일 목록': { action: 'tasks' },
+  '저장한 맛집': { action: 'places' },
+};
+
 // ───── 보내기 ─────
 // fromInput: 입력창에서 보낸 것(빠른 버튼이 아닌 것)일 때만 입력창·공유 표시를 건드림
 async function send(text, fromInput) {
   text = text.trim();
   if (!text || busy) return;
+  // 이스터에그: 주인 이름만 부르면 인사 (이름이 들어간 일정 문장은 평소처럼 처리)
+  if (/^임?관호\s*(야|아|님|씨)?\s*[!~.?ㅎㅋ]*$/.test(text)) {
+    lockOld();
+    bubble('me', text);
+    if (fromInput) { input.value = ''; clearShared(); autosize(); }
+    bubble('bot', '안녕하세요 주인님! 가나디에요! 🐶');
+    return;
+  }
+  if (quickReply(text, fromInput)) return;
   if (!store.get('url')) return showSetup(true);
   lockOld();
   const prev = turns.slice(-6);
@@ -346,17 +394,19 @@ async function send(text, fromInput) {
   const slow = setTimeout(() => { typing.textContent = '가나디가 열심히 찾고 있어요…'; }, 15000);
   setBusy(true);
   try {
-    // [저장한 맛집] 버튼은 AI 없이 바로 전체 목록
-    const r = !fromInput && text === '저장한 맛집'
-      ? await call({ action: 'places' })
-      : await call({ action: 'analyze', text, shared, history: prev });
+    // 빠른 버튼은 AI 없이 바로 목록 (빠르고 비용 0원)
+    const quick = !fromInput && QUICK_ACTIONS[text];
+    const r = await call(quick || { action: 'analyze', text, shared, history: prev });
     typing.remove();
-    if (r.places) placesCard(r.places, r.query || '');
+    if (r.events) eventsCard(r.events, text);
+    else if (r.tasks) tasksCard(r.tasks);
+    else if (r.places) placesCard(r.places, r.query || '');
     else if (r.answer) say(ko(r.answer));
     else if (r.candidates) deleteCard(r.candidates);
     else if (r.edits) editCard(r.edits);
     else if (r.items && r.items.length) saveCard(r.items);
     else say('가나디가 잘 못 알아들었어요. 조금만 더 자세히 말해 주세요.');
+    if (r.rest) bubble('note', `나머지 "${r.rest}"는 따로 한 번 더 말해 주세요.`);
   } catch (e) {
     typing.remove();
     turns.pop();
@@ -495,11 +545,11 @@ function savedMessage(items, ids) {
 // ───── 체크해서 고르는 카드 (삭제·수정 공용) ─────
 function pickCard(cands, o) {
   const many = cands.length > 5; // 많으면 실수로 다 지우지 않게 처음엔 모두 해제
-  cands.forEach(c => { c.on = !many; });
+  cands.forEach(c => { c.on = !many && !o.startOff; });
   const go = button('btn ' + o.btnClass), cancel = button('btn secondary', '취소');
   const update = () => {
     const n = cands.filter(c => c.on).length;
-    go.textContent = n ? o.label(n) : '골라 주세요';
+    go.textContent = n ? o.label(n) : (o.idle || '골라 주세요');
     go.disabled = !n;
   };
   const rows = cands.map(c => {
@@ -553,6 +603,36 @@ function editCard(cands) {
   remember('[수정 후보] ' + cands.map((c, i) => `${i + 1}. ${ko(c.before)} → ${ko(c.after)}`).join(' / '));
 }
 
+// ───── [오늘/내일/이번주 일정] 버튼: AI 없이 목록, 체크하면 지울 수 있음 ─────
+function eventsCard(events, label) {
+  if (!events.length) return say(`${label.replace(' 일정', '')}은 일정이 없어요.`);
+  pickCard(events, {
+    title: `📅 ${label} ${events.length}개`, startOff: true, idle: '지울 일정만 체크하세요',
+    btnClass: 'danger', action: 'delete', busyText: '지우는 중…', doneText: '지웠어요',
+    label: n => `${n}개 지우기`,
+    row: c => el('span', '', ko(c.label)),
+    done: n => {
+      say(`${n}개 지웠어요.`);
+      bubble('note', '잘못 지웠다면 구글 캘린더 휴지통에서 30일 안에 되살릴 수 있어요.');
+    },
+  });
+  // 줄마다 날짜가 있어서 "두번째 거 지워"처럼 가리킬 수 있게 한 줄에 하나씩 기억
+  remember(`[${label}]\n` + events.map(c => ko(c.label)).join('\n'));
+}
+
+// ───── [할 일 목록] 버튼: 체크해서 완료 처리 ─────
+function tasksCard(tasks) {
+  if (!tasks.length) return say('남은 할 일이 없어요. 🎉');
+  pickCard(tasks, {
+    title: `✅ 할 일 ${tasks.length}개`, startOff: true, idle: '끝낸 일을 체크하세요',
+    btnClass: 'primary', action: 'complete', busyText: '처리하는 중…', doneText: '완료했어요',
+    label: n => `${n}개 완료`,
+    row: c => el('span', '', c.label.replace(/^\[할 일\]\s*/, '')),
+    done: n => say(`${n}개 완료했어요. 수고했어요! 🐶`),
+  });
+  remember('[할 일 목록] ' + tasks.map(t => t.label.replace(/^\[할 일\]\s*/, '')).join(' / '));
+}
+
 // ───── 맛집 수첩 카드: 검색·분류 필터 + 줄마다 [지도] [수정] [지우기] (AI 없이 바로) ─────
 const PLACE_FIELDS = [['title', '가게 이름'], ['place', '지역'], ['category', '분류'], ['food', '음식'],
   ['rating', '별점'], ['date', '다녀온 날'], ['memo', '메모']];
@@ -567,8 +647,12 @@ function placesCard(list, query) {
   search.placeholder = '이름·지역·음식·메모로 찾기';
   search.setAttribute('aria-label', '맛집 검색');
   let cat = '';
-  const cats = ['전체', ...CATEGORIES.filter(c => list.some(p => p.category === c))];
+  const cats = ['전체'];
+  if (list.some(p => p.visited) && list.some(p => !p.visited)) cats.push('가 볼 곳', '다녀옴');
+  cats.push(...CATEGORIES.filter(c => list.some(p => p.category === c)));
   if (list.some(p => !p.category)) cats.push('분류 없음');
+  const pass = p => !cat || (cat === '가 볼 곳' ? !p.visited : cat === '다녀옴' ? !!p.visited :
+    cat === '분류 없음' ? !p.category : p.category === cat);
   const filters = row('filters', cats.map(c => {
     const b = button('fchip', c);
     b.setAttribute('aria-pressed', String(c === '전체'));
@@ -581,14 +665,13 @@ function placesCard(list, query) {
   }));
   const render = () => {
     const q = search.value.trim().toLowerCase();
-    const shown = list.filter(p => (!cat || (cat === '분류 없음' ? !p.category : p.category === cat)) &&
-      (!q || [p.name, p.area, p.food, p.category, p.memo].join(' ').toLowerCase().includes(q)));
+    const shown = list.filter(p => pass(p) && (!q || [p.name, p.area, p.food, p.category, p.memo].join(' ').toLowerCase().includes(q)));
     head.textContent = `🍽️ ${query ? `'${query}' 맛집` : '맛집 수첩'} ${shown.length}곳`;
     body.replaceChildren(...(shown.length ? shown.map(p => placeView(p, list, render)) : [el('div', 'hint', '찾는 맛집이 없어요.')]));
   };
   search.oninput = render;
   render();
-  add(row('card live', [head, search, ...(cats.length > 2 ? [filters] : []), body]));
+  add(row('card live keep', [head, search, ...(cats.length > 2 ? [filters] : []), body]));
   remember(`[맛집 목록${query ? ` '${query}'` : ''}] ` + list.slice(0, 30).map(p => p.name).join(', '));
 }
 
@@ -599,10 +682,24 @@ function placeView(p, list, rerender) {
   map.target = '_blank';
   map.rel = 'noopener';
   const editBtn = button('textbtn', '수정'), delBtn = button('textbtn', '지우기');
-  const actions = row('row-btns', [map, editBtn, delBtn]);
+  const visitBtn = button('textbtn', '다녀옴');
+  const actions = row('row-btns', [map, ...(p.visited ? [] : [visitBtn]), editBtn, delBtn]);
 
   // [수정]: 칸을 직접 고쳐 저장 (빈칸으로 두면 지워짐)
   const draft = { title: p.name, place: p.area, category: p.category, food: p.food, rating: p.rating, date: p.visited, memo: p.memo };
+  // 서버에 칸을 그대로 쓰고, 화면의 p도 같이 바꿈 ([저장하기]·[다녀옴] 공용)
+  const commit = async changes => {
+    const { count } = await call({ action: 'update', targets: [{ type: 'place', row: p.row, name: p.name, exact: true, changes }] });
+    if (!count) throw new Error('이미 바뀌었거나 지워진 것 같아요. 맛집 목록을 다시 불러와 주세요.');
+    Object.assign(p, { name: changes.title.trim(), area: changes.place || '', category: changes.category || '', food: changes.food || '',
+      rating: changes.rating || '', visited: changes.date || '', memo: changes.memo || '', link: mapLink({ place: changes.place || '', title: changes.title.trim() }) });
+    rerender();
+  };
+  // [다녀옴]: 오늘 날짜로 한 번에 (별점은 [수정]에서)
+  visitBtn.onclick = () => act(visitBtn, '기록하는 중…', async () => {
+    await commit({ ...draft, date: todayStr() });
+    bubble('note', `📍 ${p.name} 오늘 다녀온 걸로 적었어요. 별점은 [수정]에서 넣어 주세요.`);
+  });
   const editor = el('div');
   editor.hidden = true;
   PLACE_FIELDS.forEach(([k, label]) => {
@@ -619,12 +716,8 @@ function placeView(p, list, rerender) {
   saveBtn.onclick = () => {
     if (!String(draft.title || '').trim()) return bubble('bot', '가게 이름을 넣어 주세요.');
     act(saveBtn, '저장하는 중…', async () => {
-      const { count } = await call({ action: 'update', targets: [{ type: 'place', row: p.row, name: p.name, exact: true, changes: { ...draft } }] });
-      if (!count) throw new Error('이미 바뀌었거나 지워진 것 같아요. 맛집 목록을 다시 불러와 주세요.');
-      Object.assign(p, { name: draft.title.trim(), area: draft.place || '', category: draft.category || '', food: draft.food || '',
-        rating: draft.rating || '', visited: draft.date || '', memo: draft.memo || '', link: mapLink({ place: draft.place || '', title: draft.title.trim() }) });
+      await commit({ ...draft });
       bubble('note', `✏️ ${p.name} 고쳤어요.`);
-      rerender();
     });
   };
 
@@ -688,18 +781,31 @@ $('setupClose').onclick = closeSetup;
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !$('setup').hidden && !$('setupClose').hidden) closeSetup();
 });
-$('setupSave').onclick = () => {
+$('setupSave').onclick = async () => {
   const url = $('url').value.trim(), secret = $('secret').value.trim();
+  const showErr = msg => { $('setupErr').textContent = msg; $('setupErr').hidden = !msg; };
   const err = !/^https:\/\/script\.google\.com\/.+\/exec$/.test(url) ? '주소가 맞지 않아요. /exec 로 끝나는 주소를 넣어 주세요.'
     : !secret ? '비밀번호를 넣어 주세요.' : '';
-  $('setupErr').textContent = err;
-  $('setupErr').hidden = !err;
+  showErr(err);
   if (err) return;
   store.set('url', url);
   store.set('secret', secret);
-  $('setup').hidden = true;
-  setBehind(false);
-  input.focus();
+  // 저장 전에 서버에 한 번 물어봐서 주소·비밀번호가 맞는지 바로 확인
+  const btn = $('setupSave');
+  btn.disabled = true;
+  btn.textContent = '확인하는 중…';
+  try {
+    const r = await call({ action: 'ping' });
+    $('setup').hidden = true;
+    setBehind(false);
+    bubble('note', `✅ 서버에 연결됐어요 (${r.v})`);
+    input.focus();
+  } catch (e) {
+    $('setup').hidden = false; // 비밀번호 오류면 call()이 설정 창을 다시 열어 둠
+    showErr(e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = '저장하기';
 };
 if (!store.get('url')) showSetup(true);
 
